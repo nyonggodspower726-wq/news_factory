@@ -376,7 +376,6 @@ class StorySynthesisEngine:
             )
 
             if not text:
-
                 continue
 
             sentences = self._sentences(
@@ -640,7 +639,6 @@ class StorySynthesisEngine:
                         break
 
                 if not matched:
-
                     continue
 
                 events.append({
@@ -810,7 +808,7 @@ class StorySynthesisEngine:
         )[:50]
 
     # =====================================================
-    # DISPUTED
+    # DISPUTED INFORMATION
     # =====================================================
 
     def _build_disputed_information(
@@ -919,4 +917,4 @@ class StorySynthesisEngine:
 
         return self._unique_fact_objects(
             disputed
-        )[:3
+  
