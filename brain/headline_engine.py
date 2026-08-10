@@ -1005,3 +1005,171 @@ class HeadlineEngine:
         return (
             "Headline is suitable for editor review."
         )
+    # =====================================================
+    # TEXT HELPERS
+    # =====================================================
+
+    def _tokens(
+        self,
+        text: str
+    ) -> List[str]:
+
+        return re.findall(
+            r"\b[a-zA-Z0-9]+(?:['-][a-zA-Z0-9]+)*\b",
+            str(text).lower()
+        )
+
+    def _clean(
+        self,
+        headline: str
+    ) -> str:
+
+        headline = str(
+            headline or ""
+        ).strip()
+
+        headline = re.sub(
+            r"\s+",
+            " ",
+            headline
+        )
+
+        headline = headline.strip(
+            " -–—"
+        )
+
+        return headline
+
+    def _unique(
+        self,
+        items: List[str]
+    ) -> List[str]:
+
+        seen = set()
+        result = []
+
+        for item in items:
+
+            cleaned = self._clean(
+                item
+            )
+
+            if not cleaned:
+                continue
+
+            key = cleaned.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            result.append(
+                cleaned
+            )
+
+        return result
+
+    # =====================================================
+    # COMBINE
+    # =====================================================
+
+    def _combine(
+        self,
+        subject: str,
+        event: str
+    ) -> str:
+
+        subject = str(
+            subject or ""
+        ).strip()
+
+        event = str(
+            event or ""
+        ).strip()
+
+        if subject and event:
+
+            return (
+                f"{subject}: "
+                f"{self._short(event)}"
+            )
+
+        return self._short(
+            event
+        )
+
+    # =====================================================
+    # SHORTEN TEXT
+    # =====================================================
+
+    def _short(
+        self,
+        text: Any,
+        maximum: int = 90
+    ) -> str:
+
+        text = str(
+            text or ""
+        ).strip()
+
+        if len(text) <= maximum:
+
+            return text
+
+        return (
+            text[:maximum - 3].rstrip()
+            + "..."
+        )
+
+
+# =========================================================
+# MODULE-LEVEL HELPER
+# =========================================================
+
+def analyze_headline(
+    story: Dict[str, Any],
+    candidates: List[str] = None
+) -> Dict[str, Any]:
+
+    engine = HeadlineEngine()
+
+    return engine.analyze(
+        story,
+        candidates
+    )
+
+
+# =========================================================
+# BASIC TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    sample_story = {
+
+        "subject":
+            "Example News Story",
+
+        "event":
+            "Officials announce a new development",
+
+        "headline":
+            "Officials announce a new development",
+
+        "title":
+            "Example News Story",
+
+        "summary":
+            "An example news story used to test the headline engine."
+    }
+
+    engine = HeadlineEngine()
+
+    result = engine.analyze(
+        sample_story
+    )
+
+    print(
+        result
+        )
