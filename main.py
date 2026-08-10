@@ -1,31 +1,24 @@
 """
 AI NEWS FACTORY
-Main Controller
+MAIN CONTROLLER
 
-This is the central entry point for the News Factory.
-It coordinates:
-- News collection
-- Story analysis
-- Editorial intelligence
-- Journalist engine
-- Psychology engine
-- Quality control
-- Publishing
+The main application talks to the central BrainPipeline.
 
-We are building the system in stages, so some engines
-will be connected as we develop them.
+Individual brain engines should NOT be called directly from here.
 """
 
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any, Dict, List
 
 from config import FACTORY_NAME, VERSION
+from brain.pipeline import BrainPipeline
 
 
-# ---------------------------------------------------------
+# =========================================================
 # LOGGING
-# ---------------------------------------------------------
+# =========================================================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,86 +28,167 @@ logging.basicConfig(
 logger = logging.getLogger("NewsFactory")
 
 
-# ---------------------------------------------------------
-# FACTORY
-# ---------------------------------------------------------
+# =========================================================
+# NEWS FACTORY
+# =========================================================
 
 class NewsFactory:
 
     def __init__(self):
+
         self.name = FACTORY_NAME
         self.version = VERSION
+
         self.running = False
 
+        # ONE connection to the entire brain system.
+        self.brain = BrainPipeline()
+
+    # =====================================================
+    # START
+    # =====================================================
+
     async def start(self):
-        """Start the News Factory."""
 
         self.running = True
 
         logger.info("=" * 60)
-        logger.info(f"{self.name}")
+        logger.info(self.name)
         logger.info(f"Version: {self.version}")
         logger.info("=" * 60)
 
         logger.info("Starting News Factory...")
-        logger.info(f"Startup time: {datetime.now().isoformat()}")
+        logger.info(
+            f"Startup time: "
+            f"{datetime.now().isoformat()}"
+        )
 
         # -------------------------------------------------
-        # Future pipeline
-        # -------------------------------------------------
-        #
-        # 1. Collect news
-        # 2. Detect duplicate stories
-        # 3. Analyze sources
-        # 4. Verify important claims
-        # 5. Determine story significance
-        # 6. Find the strongest editorial angle
-        # 7. Generate article
-        # 8. Analyze reader psychology
-        # 9. Quality-control article
-        # 10. Publish to website
-        # 11. Distribute to social platforms
-        #
+        # BRAIN STATUS
         # -------------------------------------------------
 
-        logger.info("News Factory is online.")
-        logger.info("Waiting for the first intelligence pipeline...")
+        status = self.brain.status()
+
+        logger.info(
+            "Brain system loaded: %s/%s",
+            status["loaded_brains"],
+            status["total_brains"]
+        )
+
+        for brain_name, state in status[
+            "brains"
+        ].items():
+
+            logger.info(
+                "BRAIN | %s | %s",
+                brain_name,
+                state
+            )
+
+        logger.info(
+            "News Factory is online."
+        )
+
+    # =====================================================
+    # PROCESS STORY
+    # =====================================================
+
+    async def process_story(
+        self,
+        sources: List[Dict[str, Any]],
+        story: Dict[str, Any] = None,
+        topic: str = ""
+    ) -> Dict[str, Any]:
+
+        if not self.running:
+
+            raise RuntimeError(
+                "News Factory is not running."
+            )
+
+        logger.info(
+            "Starting intelligence pipeline..."
+        )
+
+        result = await asyncio.to_thread(
+            self.brain.run,
+            sources,
+            story,
+            topic
+        )
+
+        logger.info(
+            "Brain pipeline completed."
+        )
+
+        logger.info(
+            "Pipeline status: %s",
+            result.get(
+                "pipeline_status",
+                "UNKNOWN"
+            )
+        )
+
+        return result
+
+    # =====================================================
+    # STOP
+    # =====================================================
 
     async def stop(self):
-        """Stop the News Factory."""
+
+        if not self.running:
+            return
 
         self.running = False
-        logger.info("News Factory stopped.")
+
+        logger.info(
+            "News Factory stopped."
+        )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # APPLICATION ENTRY POINT
-# ---------------------------------------------------------
+# =========================================================
 
 async def main():
 
     factory = NewsFactory()
 
     try:
+
         await factory.start()
 
-        # Keep the application alive.
+        # -------------------------------------------------
+        # KEEP FACTORY ALIVE
+        # -------------------------------------------------
+
         while factory.running:
+
             await asyncio.sleep(5)
 
     except KeyboardInterrupt:
-        logger.info("Shutdown requested by user.")
+
+        logger.info(
+            "Shutdown requested by user."
+        )
 
     except Exception as error:
-        logger.exception(f"Factory error: {error}")
+
+        logger.exception(
+            "Factory error: %s",
+            error
+        )
 
     finally:
+
         await factory.stop()
 
 
-# ---------------------------------------------------------
+# =========================================================
 # RUN
-# ---------------------------------------------------------
+# =========================================================
 
 if __name__ == "__main__":
+
     asyncio.run(main())
