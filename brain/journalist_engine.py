@@ -676,3 +676,303 @@ class JournalistEngine:
 
             "Prioritize accuracy over engagement."
         ]
+    # =====================================================
+    # ARTICLE PLAN VALIDATION
+    # =====================================================
+
+    def validate_article_plan(
+        self,
+        article_plan: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        errors = []
+        warnings = []
+
+        if not isinstance(
+            article_plan,
+            dict
+        ):
+            return {
+                "valid": False,
+                "errors": [
+                    "Article plan must be a dictionary."
+                ],
+                "warnings": []
+            }
+
+        article = article_plan.get(
+            "article"
+        )
+
+        if not isinstance(
+            article,
+            dict
+        ):
+            errors.append(
+                "Article structure is missing."
+            )
+
+        else:
+
+            for section in self.required_sections:
+
+                if section not in article:
+
+                    errors.append(
+                        f"Missing article section: {section}"
+                    )
+
+        excluded_claims = article_plan.get(
+            "excluded_claims",
+            []
+        )
+
+        if excluded_claims:
+
+            warnings.append(
+                "Some claims were excluded because they were not sufficiently verified."
+            )
+
+        status = article_plan.get(
+            "status"
+        )
+
+        if status == "NEEDS_VERIFICATION":
+
+            warnings.append(
+                "The story still requires verification."
+            )
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings
+        }
+
+    # =====================================================
+    # ARTICLE PLAN SUMMARY
+    # =====================================================
+
+    def summarize_plan(
+        self,
+        article_plan: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        if not isinstance(
+            article_plan,
+            dict
+        ):
+            return {
+                "status": "INVALID",
+                "headline_ready": False,
+                "fact_count": 0,
+                "excluded_claim_count": 0
+            }
+
+        article = article_plan.get(
+            "article",
+            {}
+        )
+
+        if not isinstance(
+            article,
+            dict
+        ):
+            article = {}
+
+        key_facts = article.get(
+            "key_facts",
+            {}
+        )
+
+        if not isinstance(
+            key_facts,
+            dict
+        ):
+            key_facts = {}
+
+        facts = key_facts.get(
+            "facts",
+            []
+        )
+
+        if not isinstance(
+            facts,
+            list
+        ):
+            facts = []
+
+        excluded = article_plan.get(
+            "excluded_claims",
+            []
+        )
+
+        if not isinstance(
+            excluded,
+            list
+        ):
+            excluded = []
+
+        return {
+
+            "status":
+                article_plan.get(
+                    "status",
+                    "UNKNOWN"
+                ),
+
+            "headline_ready":
+                bool(
+                    article.get(
+                        "headline"
+                    )
+                ),
+
+            "fact_count":
+                len(
+                    facts
+                ),
+
+            "excluded_claim_count":
+                len(
+                    excluded
+                ),
+
+            "engine":
+                article_plan.get(
+                    "engine",
+                    self.name
+                ),
+
+            "version":
+                article_plan.get(
+                    "version",
+                    self.version
+                )
+        }
+
+    # =====================================================
+    # PUBLIC ARTICLE BUILDER
+    # =====================================================
+
+    def build_article(
+        self,
+        newsroom_package: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        plan = self.create_article_plan(
+            newsroom_package
+        )
+
+        validation = self.validate_article_plan(
+            plan
+        )
+
+        plan["validation"] = validation
+
+        plan["summary"] = self.summarize_plan(
+            plan
+        )
+
+        return plan
+
+
+# =========================================================
+# MODULE-LEVEL HELPER
+# =========================================================
+
+def create_article_plan(
+    newsroom_package: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    engine = JournalistEngine()
+
+    return engine.create_article_plan(
+        newsroom_package
+    )
+
+
+# =========================================================
+# MODULE-LEVEL ARTICLE BUILDER
+# =========================================================
+
+def build_article(
+    newsroom_package: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    engine = JournalistEngine()
+
+    return engine.build_article(
+        newsroom_package
+    )
+
+
+# =========================================================
+# BASIC TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    sample_package = {
+
+        "story": {
+
+            "original": {
+
+                "title":
+                    "Example News Story",
+
+                "source":
+                    "Example Source"
+            }
+        },
+
+        "significance": {
+
+            "level":
+                "MEDIUM"
+        },
+
+        "angles": {
+
+            "primary_angle": {
+
+                "type":
+                    "WHAT_HAPPENED"
+            }
+        },
+
+        "verification": {
+
+            "status":
+                "CONFIRMED",
+
+            "claims": [
+
+                {
+
+                    "claim":
+                        "This is a confirmed example claim.",
+
+                    "status":
+                        "CONFIRMED"
+                }
+            ]
+        },
+
+        "cluster": {
+
+            "duplicate":
+                False
+        }
+    }
+
+    engine = JournalistEngine()
+
+    result = engine.build_article(
+        sample_package
+    )
+
+    print(
+        result
+        )
