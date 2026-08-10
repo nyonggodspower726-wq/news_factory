@@ -1374,3 +1374,279 @@ class ReaderPsychologyEngine:
         ):
 
             return default
+    # =====================================================
+    # PUBLIC SUMMARY
+    # =====================================================
+
+    def summarize(
+        self,
+        analysis: Dict[str, Any]
+    ) -> str:
+        """
+        Convert the analysis result into a short
+        human-readable editorial summary.
+        """
+
+        if not isinstance(
+            analysis,
+            dict
+        ):
+            return (
+                "Reader psychology analysis is unavailable."
+            )
+
+        score = analysis.get(
+            "overall_reader_score",
+            0
+        )
+
+        headline_score = analysis.get(
+            "headline_score",
+            0
+        )
+
+        opening_score = analysis.get(
+            "opening_score",
+            0
+        )
+
+        retention_score = analysis.get(
+            "retention_score",
+            0
+        )
+
+        readability_score = analysis.get(
+            "readability_score",
+            0
+        )
+
+        try:
+            score = float(score)
+            headline_score = float(
+                headline_score
+            )
+            opening_score = float(
+                opening_score
+            )
+            retention_score = float(
+                retention_score
+            )
+            readability_score = float(
+                readability_score
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            return (
+                "Reader psychology analysis "
+                "contains invalid scores."
+            )
+
+        if score >= 80:
+
+            assessment = (
+                "STRONG_READER_APPEAL"
+            )
+
+        elif score >= 65:
+
+            assessment = (
+                "GOOD_READER_APPEAL"
+            )
+
+        elif score >= 50:
+
+            assessment = (
+                "MODERATE_READER_APPEAL"
+            )
+
+        else:
+
+            assessment = (
+                "NEEDS_EDITORIAL_IMPROVEMENT"
+            )
+
+        return (
+            f"{assessment}: "
+            f"overall={score:.2f}, "
+            f"headline={headline_score:.2f}, "
+            f"opening={opening_score:.2f}, "
+            f"retention={retention_score:.2f}, "
+            f"readability={readability_score:.2f}"
+        )
+
+    # =====================================================
+    # VALIDATION
+    # =====================================================
+
+    def validate_story(
+        self,
+        story: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Basic validation before analysis.
+
+        This does NOT verify factual accuracy.
+        It only checks whether the supplied structure
+        contains usable information.
+        """
+
+        if not isinstance(
+            story,
+            dict
+        ):
+
+            return {
+                "valid": False,
+                "reason":
+                    "Story must be a dictionary."
+            }
+
+        text = self._get_text(
+            story,
+            {}
+        )
+
+        headline = self._get_headline(
+            story,
+            {}
+        )
+
+        if not text and not headline:
+
+            return {
+                "valid": False,
+                "reason":
+                    "Story contains no usable "
+                    "headline or article text."
+            }
+
+        return {
+            "valid": True,
+            "has_headline":
+                bool(
+                    headline.strip()
+                ),
+            "has_text":
+                bool(
+                    text.strip()
+                ),
+            "text_length":
+                len(text),
+            "headline_length":
+                len(headline)
+        }
+
+
+# =========================================================
+# DEFAULT ENGINE INSTANCE
+# =========================================================
+
+reader_psychology_engine = (
+    ReaderPsychologyEngine()
+)
+
+
+# =========================================================
+# CONVENIENCE FUNCTION
+# =========================================================
+
+def analyze_reader_psychology(
+    story: Dict[str, Any],
+    article: Dict[str, Any] = None,
+    angle: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """
+    Convenience wrapper used by other AI News Factory
+    modules.
+    """
+
+    return reader_psychology_engine.analyze(
+        story=story,
+        article=article,
+        angle=angle
+    )
+
+
+# =========================================================
+# MODULE TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    test_story = {
+        "title":
+            "Markets react to new economic data",
+        "text":
+            (
+                "Markets reacted today after "
+                "new economic data was released. "
+                "Investors are watching how the "
+                "development could affect prices "
+                "and businesses in the coming days."
+            ),
+        "is_new":
+            True
+    }
+
+    result = analyze_reader_psychology(
+        test_story
+    )
+
+    print("=" * 60)
+    print(
+        "READER PSYCHOLOGY ENGINE TEST"
+    )
+    print("=" * 60)
+
+    print(
+        "Overall:",
+        result.get(
+            "overall_reader_score"
+        )
+    )
+
+    print(
+        "Headline:",
+        result.get(
+            "headline_score"
+        )
+    )
+
+    print(
+        "Opening:",
+        result.get(
+            "opening_score"
+        )
+    )
+
+    print(
+        "Retention:",
+        result.get(
+            "retention_score"
+        )
+    )
+
+    print(
+        "Readability:",
+        result.get(
+            "readability_score"
+        )
+    )
+
+    print(
+        "Status:",
+        result.get(
+            "status"
+        )
+    )
+
+    print(
+        "Summary:",
+        reader_psychology_engine.summarize(
+            result
+        )
+    )
