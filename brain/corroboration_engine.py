@@ -2,44 +2,26 @@
 AI NEWS FACTORY
 CORROBORATION ENGINE
 
-Purpose
--------
-Determine whether information is genuinely corroborated across
-multiple sources.
+Determines whether information is genuinely corroborated
+across multiple sources.
 
 Important principle:
 
     MANY ARTICLES != MANY INDEPENDENT SOURCES
 
-Ten websites may all be repeating one original report.
+The engine identifies:
 
-This engine attempts to identify:
-    - independent sources
-    - shared source chains
-    - copied reporting
-    - primary-source support
-    - independent confirmation
-    - source diversity
-    - corroboration strength
+- independent sources
+- shared source chains
+- copied reporting
+- primary-source support
+- independent confirmation
+- source diversity
+- corroboration strength
 
-The engine does not declare a claim true merely because it
-appears frequently.
-
-Pipeline position:
-
-SOURCE COLLECTION
-        ↓
-RESEARCH ENGINE
-        ↓
-CORROBORATION ENGINE
-        ↓
-EVIDENCE / CLAIM VERIFICATION
-        ↓
-FACT CHECKING
-        ↓
-EDITORIAL SYSTEM
+The engine does not declare a claim true merely because
+it appears frequently.
 """
-
 
 from typing import Any, Dict, List, Set
 from collections import Counter
@@ -375,6 +357,7 @@ class CorroborationEngine:
     ) -> List[Dict[str, Any]]:
 
         groups = []
+
         assigned: Set[str] = set()
 
         for source in sources:
@@ -386,7 +369,6 @@ class CorroborationEngine:
             )
 
             if source_id in assigned:
-
                 continue
 
             group = [
@@ -406,7 +388,6 @@ class CorroborationEngine:
                 )
 
                 if other_id in assigned:
-
                     continue
 
                 similarity = self._similarity(
@@ -519,7 +500,6 @@ class CorroborationEngine:
             ).strip()
 
             if not original and not quoted:
-
                 continue
 
             parent = (
@@ -582,13 +562,11 @@ class CorroborationEngine:
             ).lower().strip()
 
             if domain:
-
                 domains.add(
                     domain
                 )
 
             if publisher:
-
                 publishers.add(
                     publisher
                 )
@@ -831,81 +809,3 @@ class CorroborationEngine:
                     "No clear primary evidence identified."
                 )
         }
-
-    # =====================================================
-    # CLAIM ANALYSIS
-    # =====================================================
-
-    def _analyze_claims(
-        self,
-        claims: List[Dict[str, Any]],
-        sources: List[Dict[str, Any]],
-        groups: List[Dict[str, Any]],
-        chains: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        results = []
-
-        for claim in claims:
-
-            claim_text = str(
-                claim.get(
-                    "text",
-                    claim.get(
-                        "claim",
-                        ""
-                    )
-                )
-            )
-
-            supporting = []
-
-            for source in sources:
-
-                source_text = (
-                    str(
-                        source.get(
-                            "title",
-                            ""
-                        )
-                    )
-                    +
-                    " "
-                    +
-                    str(
-                        source.get(
-                            "content",
-                            ""
-                        )
-                    )
-                )
-
-                similarity = self._similarity(
-                    claim_text,
-                    source_text
-                )
-
-                if similarity >= 0.20:
-
-                    supporting.append(
-                        source
-                    )
-
-            source_groups = set()
-
-            for source in supporting:
-
-                source_id = source.get(
-                    "source_id"
-                )
-
-                for group in groups:
-
-                    if source_id in group.get(
-                        "source_ids",
-                        []
-                    ):
-
-                        source_groups.add(
-                            group.get(
-                
