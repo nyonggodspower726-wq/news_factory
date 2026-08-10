@@ -1008,3 +1008,604 @@ class StorySynthesisEngine:
         return self._unique(
             consequences
         )[:20]
+    # =====================================================
+    # CENTRAL EVENT
+    # =====================================================
+
+    def _central_event(
+        self,
+        events: List[Dict[str, Any]],
+        facts: List[Dict[str, Any]]
+    ) -> str:
+
+        if events:
+
+            return str(
+                events[0].get(
+                    "text",
+                    ""
+                )
+            )
+
+        if facts:
+
+            return str(
+                facts[0].get(
+                    "text",
+                    ""
+                )
+            )
+
+        return ""
+
+    # =====================================================
+    # SIGNIFICANCE
+    # =====================================================
+
+    def _calculate_significance(
+        self,
+        facts: List[Dict[str, Any]],
+        consequences: List[str],
+        entities: Dict[str, List[str]],
+        events: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+
+        score = 0
+
+        if facts:
+            score += 30
+
+        if len(facts) >= 3:
+            score += 15
+
+        if consequences:
+            score += 20
+
+        if events:
+            score += 15
+
+        if entities.get("people"):
+            score += 5
+
+        if entities.get("organizations"):
+            score += 5
+
+        if entities.get("locations"):
+            score += 5
+
+        score = min(
+            score,
+            100
+        )
+
+        if score >= 80:
+            level = "HIGH"
+
+        elif score >= 50:
+            level = "MEDIUM"
+
+        else:
+            level = "LOW"
+
+        reasons = []
+
+        if facts:
+            reasons.append(
+                "Multiple factual elements are present."
+            )
+
+        if consequences:
+            reasons.append(
+                "Potential consequences or impact are identified."
+            )
+
+        if events:
+            reasons.append(
+                "A concrete event is identifiable."
+            )
+
+        if not reasons:
+            reasons.append(
+                "Insufficient information for strong significance assessment."
+            )
+
+        return {
+            "score": score,
+            "level": level,
+            "reasons": reasons
+        }
+
+    # =====================================================
+    # STORY CLASSIFICATION
+    # =====================================================
+
+    def _classify_story(
+        self,
+        documents: List[Dict[str, Any]],
+        metadata: Dict[str, Any]
+    ) -> str:
+
+        supplied_type = metadata.get(
+            "story_type"
+        )
+
+        if supplied_type:
+            return str(
+                supplied_type
+            )
+
+        text_parts = []
+
+        for document in documents:
+
+            text_parts.append(
+                str(
+                    document.get(
+                        "title",
+                        ""
+                    )
+                )
+            )
+
+            text_parts.extend(
+                document.get(
+                    "sentences",
+                    []
+                )
+            )
+
+        text = " ".join(
+            text_parts
+        ).lower()
+
+        categories = {
+
+            "politics": [
+                "president",
+                "government",
+                "minister",
+                "election",
+                "parliament",
+                "senate",
+                "congress",
+                "political"
+            ],
+
+            "business": [
+                "company",
+                "business",
+                "market",
+                "stock",
+                "revenue",
+                "profit",
+                "economy",
+                "economic"
+            ],
+
+            "technology": [
+                "technology",
+                "software",
+                "artificial intelligence",
+                "ai",
+                "robot",
+                "app",
+                "cyber"
+            ],
+
+            "sports": [
+                "football",
+                "soccer",
+                "basketball",
+                "tennis",
+                "match",
+                "player",
+                "coach",
+                "league"
+            ],
+
+            "health": [
+                "health",
+                "hospital",
+                "disease",
+                "doctor",
+                "medical",
+                "virus",
+                "medicine"
+            ],
+
+            "crime": [
+                "police",
+                "arrested",
+                "murder",
+                "crime",
+                "court",
+                "suspect",
+                "investigation"
+            ]
+        }
+
+        scores = {}
+
+        for category, keywords in categories.items():
+
+            scores[category] = sum(
+                text.count(
+                    keyword
+                )
+                for keyword in keywords
+            )
+
+        if not scores:
+            return "general"
+
+        best_category = max(
+            scores,
+            key=scores.get
+        )
+
+        if scores[best_category] == 0:
+            return "general"
+
+        return best_category
+
+    # =====================================================
+    # EDITORIAL CONFIDENCE
+    # =====================================================
+
+    def _editorial_confidence(
+        self,
+        facts: List[Dict[str, Any]],
+        disputed: List[Dict[str, Any]],
+        unknowns: List[str]
+    ) -> str:
+
+        if not facts:
+            return "LOW"
+
+        if disputed:
+            return "MEDIUM"
+
+        if unknowns:
+            return "MEDIUM"
+
+        confidence_values = []
+
+        for fact in facts:
+
+            value = fact.get(
+                "confidence",
+                0
+            )
+
+            try:
+
+                confidence_values.append(
+                    float(value)
+                )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+
+                continue
+
+        if not confidence_values:
+            return "MEDIUM"
+
+        average = (
+            sum(confidence_values)
+            /
+            len(confidence_values)
+        )
+
+        if average >= 80:
+            return "HIGH"
+
+        if average >= 55:
+            return "MEDIUM"
+
+        return "LOW"
+
+    # =====================================================
+    # EDITORIAL NOTES
+    # =====================================================
+
+    def _editorial_notes(
+        self,
+        synthesis: Dict[str, Any]
+    ) -> List[str]:
+
+        notes = []
+
+        confidence = synthesis.get(
+            "editorial_confidence",
+            "LOW"
+        )
+
+        if confidence == "LOW":
+
+            notes.append(
+                "Editorial confidence is low. Additional verification is recommended."
+            )
+
+        elif confidence == "MEDIUM":
+
+            notes.append(
+                "Editorial confidence is moderate. Review important claims before publication."
+            )
+
+        else:
+
+            notes.append(
+                "Editorial confidence is high based on the available synthesis."
+            )
+
+        disputed = synthesis.get(
+            "disputed_information",
+            []
+        )
+
+        if disputed:
+
+            notes.append(
+                "Disputed information should remain clearly attributed."
+            )
+
+        unknowns = synthesis.get(
+            "unknowns",
+            []
+        )
+
+        if unknowns:
+
+            notes.append(
+                "Unknown or unresolved elements remain in the story."
+            )
+
+        if not synthesis.get(
+            "confirmed_facts"
+        ):
+
+            notes.append(
+                "No confirmed facts were identified by the synthesis stage."
+            )
+
+        return notes
+
+    # =====================================================
+    # SENTENCE SPLITTER
+    # =====================================================
+
+    def _sentences(
+        self,
+        text: str
+    ) -> List[str]:
+
+        text = str(
+            text or ""
+        ).strip()
+
+        if not text:
+            return []
+
+        parts = re.split(
+            r"(?<=[.!?])\s+",
+            text
+        )
+
+        return [
+            part.strip()
+            for part in parts
+            if part.strip()
+        ]
+
+    # =====================================================
+    # FACT DETECTION
+    # =====================================================
+
+    def _looks_like_fact(
+        self,
+        text: str
+    ) -> bool:
+
+        if not text:
+            return False
+
+        uncertainty = any(
+            marker in text
+            for marker
+            in self.uncertainty_markers
+        )
+
+        if uncertainty:
+            return False
+
+        dispute = any(
+            marker in text
+            for marker
+            in self.dispute_markers
+        )
+
+        if dispute:
+            return False
+
+        return any(
+            marker in text
+            for marker
+            in self.fact_markers
+        )
+
+    # =====================================================
+    # UNIQUE STRINGS
+    # =====================================================
+
+    def _unique(
+        self,
+        values: List[str]
+    ) -> List[str]:
+
+        output = []
+        seen = set()
+
+        for value in values:
+
+            value = str(
+                value or ""
+            ).strip()
+
+            if not value:
+                continue
+
+            key = value.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(
+                key
+            )
+
+            output.append(
+                value
+            )
+
+        return output
+
+    # =====================================================
+    # UNIQUE EVENTS
+    # =====================================================
+
+    def _unique_events(
+        self,
+        events: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        output = []
+        seen = set()
+
+        for event in events:
+
+            if not isinstance(
+                event,
+                dict
+            ):
+                continue
+
+            text = str(
+                event.get(
+                    "text",
+                    ""
+                )
+            ).strip()
+
+            if not text:
+                continue
+
+            key = text.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(
+                key
+            )
+
+            output.append(
+                event
+            )
+
+        return output
+
+    # =====================================================
+    # UNIQUE FACT OBJECTS
+    # =====================================================
+
+    def _unique_fact_objects(
+        self,
+        items: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        output = []
+        seen = set()
+
+        for item in items:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+                continue
+
+            text = str(
+                item.get(
+                    "text",
+                    item.get(
+                        "claim",
+                        ""
+                    )
+                )
+            ).strip()
+
+            if not text:
+                continue
+
+            key = text.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(
+                key
+            )
+
+            output.append(
+                item
+            )
+
+        return output
+
+
+# =========================================================
+# SIMPLE FUNCTION API
+# =========================================================
+
+def synthesize_story(
+    sources: List[Dict[str, Any]],
+    evidence: Dict[str, Any] = None,
+    metadata: Dict[str, Any] = None
+) -> Dict[str, Any]:
+
+    engine = StorySynthesisEngine()
+
+    return engine.synthesize(
+        sources=sources,
+        evidence=evidence,
+        metadata=metadata
+    )
+
+
+# =========================================================
+# BASIC TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    test_sources = [
+        {
+            "id": "source_1",
+            "name": "Test Source",
+            "title": "Officials announce new development",
+            "text": (
+                "Officials announced a new development "
+                "in the investigation. "
+                "The investigation will continue."
+            )
+        }
+    ]
+
+    result = synthesize_story(
+        sources=test_sources
+    )
+
+    print(result)
