@@ -466,4 +466,23 @@ class FactChecker:
 
         if (
             len(supporting) >= 3
-           
+            and score >= 80
+        ):
+            return "CONFIRMED"
+
+        if (
+            len(supporting) >= 2
+            and score >= 60
+        ):
+            return "STRONGLY_SUPPORTED"
+
+        if (
+            len(supporting) >= 1
+            and score >= 40
+        ):
+            return "PARTIALLY_SUPPORTED"
+
+        if contradicting:
+            return "DISPUTED"
+
+        return "UNVERIFIED"
