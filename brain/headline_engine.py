@@ -254,6 +254,7 @@ class HeadlineEngine:
         )
 
         if title:
+
             candidates.append(
                 str(title)
             )
@@ -920,9 +921,11 @@ class HeadlineEngine:
         )
 
         if ratio >= 0.60:
+
             return 0
 
         if ratio >= 0.40:
+
             return 15
 
         return 35
@@ -1002,41 +1005,3 @@ class HeadlineEngine:
         return (
             "Headline is suitable for editor review."
         )
-
-    # =====================================================
-    # HELPERS
-    # =====================================================
-
-    def _combine(
-        self,
-        subject: str,
-        event: str
-    ) -> str:
-
-        if subject and event:
-
-            return (
-                f"{subject}: "
-                f"{self._short(event)}"
-            )
-
-        return self._short(
-            event
-        )
-
-    def _short(
-        self,
-        text: Any,
-        maximum: int = 90
-    ) -> str:
-
-        text = str(
-            text or ""
-        ).strip()
-
-        if len(text) <= maximum:
-
-            return text
-
-        return (
-      
