@@ -893,3 +893,484 @@ class ReaderPsychologyEngine:
             return 0.60
 
         return 0.35
+    # =====================================================
+    # MANIPULATION DETECTION
+    # =====================================================
+
+    def _detect_manipulation(
+        self,
+        headline: str,
+        text: str
+    ) -> List[str]:
+
+        combined = (
+            headline
+            + " "
+            + text
+        ).lower()
+
+        flags = []
+
+        for pattern in (
+            self.banned_manipulation_patterns
+        ):
+
+            if re.search(
+                pattern,
+                combined
+            ):
+
+                flags.append(
+                    pattern
+                )
+
+        return flags
+
+    # =====================================================
+    # READER PROFILE
+    # =====================================================
+
+    def _reader_profile(
+        self,
+        signals: Dict[str, float]
+    ) -> Dict[str, str]:
+
+        if (
+            signals["impact"] >= 0.60
+        ):
+
+            reader_need = (
+                "HIGH_PRACTICAL_RELEVANCE"
+            )
+
+        elif (
+            signals["curiosity"] >= 0.50
+        ):
+
+            reader_need = (
+                "HIGH_INFORMATION_CURIOSITY"
+            )
+
+        else:
+
+            reader_need = (
+                "GENERAL_NEWS_INTEREST"
+            )
+
+        if (
+            signals["complexity"] >= 0.60
+        ):
+
+            reading_mode = (
+                "NEEDS_CLEAR_EXPLANATION"
+            )
+
+        else:
+
+            reading_mode = (
+                "FAST_NEWS_READER"
+            )
+
+        return {
+
+            "reader_need":
+                reader_need,
+
+            "reading_mode":
+                reading_mode,
+
+            "attention_driver":
+                self._attention_driver(
+                    signals
+                )
+        }
+
+    # =====================================================
+    # ATTENTION DRIVER
+    # =====================================================
+
+    def _attention_driver(
+        self,
+        signals: Dict[str, float]
+    ) -> str:
+
+        scores = {
+
+            "IMPACT":
+                signals.get(
+                    "impact",
+                    0.0
+                ),
+
+            "CURIOSITY":
+                signals.get(
+                    "curiosity",
+                    0.0
+                ),
+
+            "URGENCY":
+                signals.get(
+                    "urgency",
+                    0.0
+                ),
+
+            "EMOTIONAL_WEIGHT":
+                signals.get(
+                    "emotional_weight",
+                    0.0
+                ),
+
+            "NOVELTY":
+                signals.get(
+                    "novelty",
+                    0.0
+                ),
+
+            "INFORMATION_GAP":
+                signals.get(
+                    "information_gap",
+                    0.0
+                )
+        }
+
+        return max(
+            scores,
+            key=scores.get
+        )
+
+    # =====================================================
+    # IMPROVEMENTS
+    # =====================================================
+
+    def _improvements(
+        self,
+        signals: Dict[str, float],
+        headline: str,
+        text: str
+    ) -> List[str]:
+
+        improvements = []
+
+        if signals.get(
+            "curiosity",
+            0.0
+        ) < 0.30:
+
+            improvements.append(
+                "Add a useful information gap "
+                "that the article actually answers."
+            )
+
+        if signals.get(
+            "impact",
+            0.0
+        ) < 0.30:
+
+            improvements.append(
+                "Explain more clearly who is affected "
+                "and why the development matters."
+            )
+
+        if signals.get(
+            "urgency",
+            0.0
+        ) < 0.20:
+
+            improvements.append(
+                "If the story is genuinely time-sensitive, "
+                "make the timing clear."
+            )
+
+        if signals.get(
+            "specificity",
+            0.0
+        ) < 0.30:
+
+            improvements.append(
+                "Add verified dates, figures, names, "
+                "locations, or other concrete details."
+            )
+
+        if signals.get(
+            "novelty",
+            0.0
+        ) < 0.30:
+
+            improvements.append(
+                "Clarify what is newly reported or "
+                "what has changed."
+            )
+
+        if signals.get(
+            "complexity",
+            0.0
+        ) > 0.60:
+
+            improvements.append(
+                "Simplify long sentences and explain "
+                "technical terminology."
+            )
+
+        if not headline.strip():
+
+            improvements.append(
+                "Create a clear, specific headline "
+                "that accurately reflects the story."
+            )
+
+        if self._detect_manipulation(
+            headline,
+            text
+        ):
+
+            improvements.append(
+                "Remove manipulative wording and "
+                "replace it with factual language."
+            )
+
+        if not improvements:
+
+            improvements.append(
+                "The story has a reasonable balance "
+                "of clarity, relevance, and reader value."
+            )
+
+        return improvements
+
+    # =====================================================
+    # RETENTION PLAN
+    # =====================================================
+
+    def _retention_plan(
+        self,
+        signals: Dict[str, float]
+    ) -> List[str]:
+
+        plan = []
+
+        if signals.get(
+            "information_gap",
+            0.0
+        ) >= 0.40:
+
+            plan.append(
+                "Open with the key question or "
+                "development and answer it progressively."
+            )
+
+        else:
+
+            plan.append(
+                "Introduce the most useful verified "
+                "fact early in the story."
+            )
+
+        if signals.get(
+            "impact",
+            0.0
+        ) >= 0.40:
+
+            plan.append(
+                "Explain the practical effect on "
+                "people, businesses, markets, or other "
+                "relevant groups."
+            )
+
+        if signals.get(
+            "novelty",
+            0.0
+        ) >= 0.40:
+
+            plan.append(
+                "Clearly distinguish the new development "
+                "from previously known information."
+            )
+
+        if signals.get(
+            "complexity",
+            0.0
+        ) >= 0.50:
+
+            plan.append(
+                "Break complicated information into "
+                "short, easy-to-follow sections."
+            )
+
+        plan.append(
+            "End with the confirmed next step, "
+            "remaining uncertainty, or what readers "
+            "should watch for."
+        )
+
+        return plan
+
+    # =====================================================
+    # TEXT EXTRACTION
+    # =====================================================
+
+    def _get_text(
+        self,
+        story: Dict[str, Any],
+        article: Dict[str, Any]
+    ) -> str:
+
+        candidates = [
+
+            article.get(
+                "text"
+            ),
+
+            article.get(
+                "content"
+            ),
+
+            article.get(
+                "body"
+            ),
+
+            story.get(
+                "text"
+            ),
+
+            story.get(
+                "content"
+            ),
+
+            story.get(
+                "summary"
+            ),
+
+            story.get(
+                "description"
+            )
+        ]
+
+        for value in candidates:
+
+            if isinstance(
+                value,
+                str
+            ) and value.strip():
+
+                return value.strip()
+
+        return ""
+
+    # =====================================================
+    # HEADLINE EXTRACTION
+    # =====================================================
+
+    def _get_headline(
+        self,
+        story: Dict[str, Any],
+        article: Dict[str, Any]
+    ) -> str:
+
+        candidates = [
+
+            article.get(
+                "headline"
+            ),
+
+            article.get(
+                "title"
+            ),
+
+            story.get(
+                "headline"
+            ),
+
+            story.get(
+                "title"
+            ),
+
+            story.get(
+                "name"
+            )
+        ]
+
+        for value in candidates:
+
+            if isinstance(
+                value,
+                str
+            ) and value.strip():
+
+                return value.strip()
+
+        return ""
+
+    # =====================================================
+    # WORD TOKENIZATION
+    # =====================================================
+
+    def _words(
+        self,
+        text: str
+    ) -> List[str]:
+
+        if not isinstance(
+            text,
+            str
+        ):
+
+            return []
+
+        return re.findall(
+            r"\b[a-zA-Z][a-zA-Z'-]*\b",
+            text.lower()
+        )
+
+    # =====================================================
+    # SIGNAL CALCULATION
+    # =====================================================
+
+    def _signal(
+        self,
+        words: List[str],
+        signal_words: set
+    ) -> float:
+
+        if not words:
+
+            return 0.0
+
+        matches = sum(
+            1
+            for word in words
+            if word in signal_words
+        )
+
+        raw = (
+            matches
+            /
+            len(words)
+        )
+
+        return min(
+            1.0,
+            raw * 12
+        )
+
+    # =====================================================
+    # SAFE VALUE CONVERSION
+    # =====================================================
+
+    def _safe_float(
+        self,
+        value: Any,
+        default: float = 0.0
+    ) -> float:
+
+        try:
+
+            return float(
+                value
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            return default
