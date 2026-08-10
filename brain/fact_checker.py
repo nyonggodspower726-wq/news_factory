@@ -486,3 +486,497 @@ class FactChecker:
             return "DISPUTED"
 
         return "UNVERIFIED"
+    # =====================================================
+    # SUMMARY
+    # =====================================================
+
+    def _build_summary(
+        self,
+        claims: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+
+        counts = {
+            "CONFIRMED": 0,
+            "STRONGLY_SUPPORTED": 0,
+            "PARTIALLY_SUPPORTED": 0,
+            "UNVERIFIED": 0,
+            "DISPUTED": 0,
+            "CONTRADICTED": 0
+        }
+
+        for claim in claims:
+
+            status = claim.get(
+                "status",
+                "UNVERIFIED"
+            )
+
+            if status not in counts:
+                status = "UNVERIFIED"
+
+            counts[
+                status
+            ] += 1
+
+        total = len(
+            claims
+        )
+
+        if total:
+
+            average_score = round(
+                sum(
+                    claim.get(
+                        "verification_score",
+                        0
+                    )
+                    for claim
+                    in claims
+                )
+                /
+                total,
+                2
+            )
+
+        else:
+
+            average_score = 0
+
+        return {
+            "total_claims":
+                total,
+
+            "confirmed":
+                counts[
+                    "CONFIRMED"
+                ],
+
+            "strongly_supported":
+                counts[
+                    "STRONGLY_SUPPORTED"
+                ],
+
+            "partially_supported":
+                counts[
+                    "PARTIALLY_SUPPORTED"
+                ],
+
+            "unverified":
+                counts[
+                    "UNVERIFIED"
+                ],
+
+            "disputed":
+                counts[
+                    "DISPUTED"
+                ],
+
+            "contradicted":
+                counts[
+                    "CONTRADICTED"
+                ],
+
+            "average_verification_score":
+                average_score,
+
+            "all_claims_safe":
+                (
+                    total > 0
+                    and
+                    counts["CONTRADICTED"] == 0
+                    and
+                    counts["DISPUTED"] == 0
+                    and
+                    counts["UNVERIFIED"] == 0
+                )
+        }
+
+    # =====================================================
+    # PUBLICATION STATUS
+    # =====================================================
+
+    def _publication_status(
+        self,
+        claims: List[Dict[str, Any]]
+    ) -> str:
+
+        if not claims:
+            return "NO_CLAIMS_TO_VERIFY"
+
+        statuses = {
+            claim.get(
+                "status",
+                "UNVERIFIED"
+            )
+            for claim
+            in claims
+        }
+
+        if "CONTRADICTED" in statuses:
+            return "BLOCK_PUBLICATION"
+
+        if "DISPUTED" in statuses:
+            return "HUMAN_REVIEW_REQUIRED"
+
+        if "UNVERIFIED" in statuses:
+            return "HUMAN_REVIEW_REQUIRED"
+
+        scores = [
+            claim.get(
+                "verification_score",
+                0
+            )
+            for claim
+            in claims
+        ]
+
+        average_score = (
+            sum(scores)
+            /
+            len(scores)
+        )
+
+        if average_score < self.minimum_publish_score:
+            return "HUMAN_REVIEW_REQUIRED"
+
+        if any(
+            claim.get(
+                "risk"
+            ) == "HIGH"
+            for claim
+            in claims
+        ):
+
+            return "HUMAN_REVIEW_REQUIRED"
+
+        return "SAFE_FOR_EDITORIAL_PIPELINE"
+
+    # =====================================================
+    # CLAIM RISK
+    # =====================================================
+
+    def _claim_risk(
+        self,
+        text: str
+    ) -> str:
+
+        lowered = str(
+            text
+        ).lower()
+
+        for term in self.high_risk_terms:
+
+            if term in lowered:
+                return "HIGH"
+
+        # Claims containing numbers, percentages,
+        # money, dates or named organizations deserve
+        # additional attention.
+        if re.search(
+            r"\d+%|\$[\d,]+|\b\d{4}\b",
+            lowered
+        ):
+
+            return "MEDIUM"
+
+        return "NORMAL"
+
+    # =====================================================
+    # SOURCE LABELS
+    # =====================================================
+
+    def _source_labels(
+        self,
+        sources: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        labels = []
+
+        for source in sources:
+
+            labels.append({
+
+                "source_id":
+                    source.get(
+                        "source_id",
+                        source.get(
+                            "id"
+                        )
+                    ),
+
+                "publisher":
+                    source.get(
+                        "publisher",
+                        source.get(
+                            "name",
+                            ""
+                        )
+                    ),
+
+                "domain":
+                    source.get(
+                        "domain",
+                        source.get(
+                            "url",
+                            ""
+                        )
+                    ),
+
+                "url":
+                    source.get(
+                        "url",
+                        ""
+                    )
+            })
+
+        return labels
+
+    # =====================================================
+    # TOKENIZER
+    # =====================================================
+
+    def _tokens(
+        self,
+        text: str
+    ) -> Set[str]:
+
+        text = str(
+            text
+            or
+            ""
+        ).lower()
+
+        words = re.findall(
+            r"\b[a-z0-9]{3,}\b",
+            text
+        )
+
+        stop_words = {
+            "the",
+            "and",
+            "for",
+            "that",
+            "this",
+            "with",
+            "from",
+            "have",
+            "has",
+            "had",
+            "were",
+            "was",
+            "are",
+            "been",
+            "will",
+            "would",
+            "could",
+            "should",
+            "about",
+            "after",
+            "before",
+            "into",
+            "their",
+            "there",
+            "they",
+            "them",
+            "than",
+            "then",
+            "when",
+            "where",
+            "which",
+            "while",
+            "what",
+            "said",
+            "says",
+            "also",
+            "more",
+            "most",
+            "some",
+            "such"
+        }
+
+        return {
+            word
+            for word
+            in words
+            if word
+            not in stop_words
+        }
+
+    # =====================================================
+    # CLAIM ID
+    # =====================================================
+
+    def _claim_id(
+        self,
+        text: str
+    ) -> str:
+
+        digest = hashlib.sha256(
+            text.encode(
+                "utf-8"
+            )
+        ).hexdigest()[:12]
+
+        return (
+            "claim_"
+            + digest
+        )
+
+    # =====================================================
+    # STORY ID
+    # =====================================================
+
+    def _story_id(
+        self,
+        story: Dict[str, Any]
+    ) -> str:
+
+        existing_id = story.get(
+            "story_id",
+            story.get(
+                "id"
+            )
+        )
+
+        if existing_id:
+            return str(
+                existing_id
+            )
+
+        source_text = " ".join([
+
+            str(
+                story.get(
+                    "title",
+                    ""
+                )
+            ),
+
+            str(
+                story.get(
+                    "content",
+                    ""
+                )
+            )
+        ])
+
+        digest = hashlib.sha256(
+            source_text.encode(
+                "utf-8"
+            )
+        ).hexdigest()[:12]
+
+        return (
+            "story_"
+            + digest
+        )
+
+
+# =========================================================
+# SIMPLE FUNCTION API
+# =========================================================
+
+def verify_story(
+    story: Dict[str, Any],
+    sources: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+
+    checker = FactChecker()
+
+    return checker.verify_story(
+        story=story,
+        sources=sources
+    )
+
+
+def verify_claim(
+    claim: Dict[str, Any],
+    sources: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+
+    checker = FactChecker()
+
+    return checker.verify_claim(
+        claim=claim,
+        sources=sources
+    )
+
+
+# =========================================================
+# TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    example_story = {
+
+        "title":
+            "Officials announce a new development",
+
+        "content":
+            (
+                "Officials announced a new development "
+                "in the investigation. "
+                "The investigation will continue."
+            )
+    }
+
+    example_sources = [
+
+        {
+            "source_id":
+                "source_1",
+
+            "publisher":
+                "Example News",
+
+            "domain":
+                "example.com",
+
+            "url":
+                "https://example.com/story",
+
+            "title":
+                "Officials announce a new development",
+
+            "content":
+                (
+                    "Officials announced a new development "
+                    "in the investigation."
+                )
+        },
+
+        {
+            "source_id":
+                "source_2",
+
+            "publisher":
+                "Example Wire",
+
+            "domain":
+                "wire.example.com",
+
+            "url":
+                "https://wire.example.com/story",
+
+            "title":
+                "Officials announce development",
+
+            "content":
+                (
+                    "Officials announced a new development "
+                    "in the investigation."
+                )
+        }
+    ]
+
+    checker = FactChecker()
+
+    result = checker.verify_story(
+        story=example_story,
+        sources=example_sources
+    )
+
+    print(
+        result
+        )
