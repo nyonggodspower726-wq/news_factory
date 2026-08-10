@@ -809,3 +809,774 @@ class CorroborationEngine:
                     "No clear primary evidence identified."
                 )
         }
+    # =====================================================
+    # CLAIM ANALYSIS
+    # =====================================================
+
+    def _analyze_claims(
+        self,
+        claims: List[Dict[str, Any]],
+        sources: List[Dict[str, Any]],
+        groups: List[Dict[str, Any]],
+        source_chains: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        results = []
+
+        if not claims:
+
+            return results
+
+        for index, claim in enumerate(
+            claims
+        ):
+
+            if isinstance(
+                claim,
+                str
+            ):
+
+                claim_text = claim
+
+            elif isinstance(
+                claim,
+                dict
+            ):
+
+                claim_text = str(
+                    claim.get(
+                        "claim",
+                        claim.get(
+                            "text",
+                            claim.get(
+                                "statement",
+                                ""
+                            )
+                        )
+                    )
+                )
+
+            else:
+
+                continue
+
+            claim_text = claim_text.strip()
+
+            if not claim_text:
+                continue
+
+            supporting_sources = []
+
+            for source in sources:
+
+                content = str(
+                    source.get(
+                        "content",
+                        ""
+                    )
+                )
+
+                title = str(
+                    source.get(
+                        "title",
+                        ""
+                    )
+                )
+
+                combined = (
+                    title
+                    + " "
+                    + content
+                )
+
+                similarity = (
+                    self._similarity(
+                        claim_text,
+                        combined
+                    )
+                )
+
+                # Exact or strong lexical overlap.
+                claim_words = set(
+                    self._tokens(
+                        claim_text
+                    )
+                )
+
+                source_words = set(
+                    self._tokens(
+                        combined
+                    )
+                )
+
+                overlap = 0.0
+
+                if claim_words:
+
+                    overlap = (
+                        len(
+                            claim_words
+                            &
+                            source_words
+                        )
+                        /
+                        len(
+                            claim_words
+                        )
+                    )
+
+                if (
+                    similarity >= 0.15
+                    or overlap >= 0.35
+                ):
+
+                    supporting_sources.append({
+
+                        "source_id":
+                            source.get(
+                                "source_id"
+                            ),
+
+                        "publisher":
+                            source.get(
+                                "publisher"
+                            ),
+
+                        "domain":
+                            source.get(
+                                "domain"
+                            ),
+
+                        "type":
+                            source.get(
+                                "type"
+                            ),
+
+                        "similarity":
+                            round(
+                                similarity,
+                                3
+                            ),
+
+                        "word_overlap":
+                            round(
+                                overlap,
+                                3
+                            ),
+
+                        "primary":
+                            bool(
+                                source.get(
+                                    "primary"
+                                )
+                            )
+                    })
+
+            unique_domains = self._unique(
+                [
+                    item.get(
+                        "domain"
+                    )
+                    for item
+                    in supporting_sources
+                    if item.get(
+                        "domain"
+                    )
+                ]
+            )
+
+            primary_count = sum(
+                1
+                for item
+                in supporting_sources
+                if item.get(
+                    "primary"
+                )
+                or
+                item.get(
+                    "type"
+                )
+                in self.primary_types
+            )
+
+            support_count = len(
+                supporting_sources
+            )
+
+            if support_count == 0:
+
+                level = "UNSUPPORTED"
+
+            elif (
+                primary_count >= 1
+                and
+                support_count >= 2
+            ):
+
+                level = "STRONG"
+
+            elif (
+                len(
+                    unique_domains
+                ) >= 2
+                and
+                support_count >= 2
+            ):
+
+                level = "MODERATE"
+
+            elif support_count >= 1:
+
+                level = "WEAK"
+
+            else:
+
+                level = "UNSUPPORTED"
+
+            results.append({
+
+                "claim_id":
+                    (
+                        claim.get(
+                            "claim_id",
+                            claim.get(
+                                "id",
+                                f"claim_{index + 1}"
+                            )
+                        )
+                        if isinstance(
+                            claim,
+                            dict
+                        )
+                        else
+                        f"claim_{index + 1}"
+                    ),
+
+                "claim":
+                    claim_text,
+
+                "supporting_source_count":
+                    support_count,
+
+                "unique_supporting_domains":
+                    len(
+                        unique_domains
+                    ),
+
+                "primary_support_count":
+                    primary_count,
+
+                "supporting_sources":
+                    supporting_sources,
+
+                "corroboration_level":
+                    level,
+
+                "independent_confirmation":
+                    (
+                        len(
+                            unique_domains
+                        ) >= 2
+                    )
+            })
+
+        return results
+
+    # =====================================================
+    # OVERALL SCORE
+    # =====================================================
+
+    def _overall_score(
+        self,
+        independence: Dict[str, Any],
+        diversity: Dict[str, Any],
+        primary_support: Dict[str, Any],
+        claim_results: List[Dict[str, Any]]
+    ) -> float:
+
+        independence_score = (
+            float(
+                independence.get(
+                    "independent_ratio",
+                    0
+                )
+            )
+            * 100
+        )
+
+        diversity_score = min(
+            100,
+            (
+                diversity.get(
+                    "domain_count",
+                    0
+                )
+                * 20
+            )
+            +
+            (
+                diversity.get(
+                    "type_count",
+                    0
+                )
+                * 10
+            )
+        )
+
+        primary_score = float(
+            primary_support.get(
+                "strength",
+                0
+            )
+        )
+
+        if claim_results:
+
+            level_values = {
+                "STRONG": 100,
+                "MODERATE": 70,
+                "WEAK": 40,
+                "UNSUPPORTED": 0
+            }
+
+            claim_score = sum(
+                level_values.get(
+                    item.get(
+                        "corroboration_level"
+                    ),
+                    0
+                )
+                for item
+                in claim_results
+            ) / len(
+                claim_results
+            )
+
+        else:
+
+            # When no explicit claims are supplied,
+            # score the source network instead.
+            claim_score = (
+                independence_score
+            )
+
+        score = (
+            (
+                independence_score
+                * 0.35
+            )
+            +
+            (
+                diversity_score
+                * 0.20
+            )
+            +
+            (
+                primary_score
+                * 0.20
+            )
+            +
+            (
+                claim_score
+                * 0.25
+            )
+        )
+
+        return round(
+            max(
+                0.0,
+                min(
+                    100.0,
+                    score
+                )
+            ),
+            2
+        )
+
+    # =====================================================
+    # CORROBORATION LEVEL
+    # =====================================================
+
+    def _level(
+        self,
+        score: float
+    ) -> str:
+
+        if score >= 80:
+
+            return "STRONG"
+
+        if score >= 60:
+
+            return "MODERATE"
+
+        if score >= 40:
+
+            return "LIMITED"
+
+        return "WEAK"
+
+    # =====================================================
+    # EDITORIAL WARNING
+    # =====================================================
+
+    def _warning(
+        self,
+        score: float,
+        independence: Dict[str, Any]
+    ) -> str:
+
+        ratio = float(
+            independence.get(
+                "independent_ratio",
+                0
+            )
+        )
+
+        if ratio < 0.40:
+
+            return (
+                "Multiple reports may derive from "
+                "the same underlying source. "
+                "Do not treat article count as "
+                "independent corroboration."
+            )
+
+        if score < 40:
+
+            return (
+                "Corroboration is weak. "
+                "Additional independent evidence "
+                "should be obtained before publication."
+            )
+
+        if score < 60:
+
+            return (
+                "Corroboration is limited. "
+                "Editorial verification remains necessary."
+            )
+
+        if score < 80:
+
+            return (
+                "Corroboration is moderate. "
+                "Review primary evidence where available."
+            )
+
+        return (
+            "Strong corroboration detected, "
+            "subject to final fact-checking and editorial review."
+        )
+
+    # =====================================================
+    # DOMAIN
+    # =====================================================
+
+    def _domain(
+        self,
+        url: str
+    ) -> str:
+
+        if not url:
+            return ""
+
+        try:
+
+            parsed = urlparse(
+                url
+            )
+
+            domain = (
+                parsed.netloc
+                or
+                parsed.path
+            )
+
+            domain = domain.lower()
+
+            domain = re.sub(
+                r"^www\.",
+                "",
+                domain
+            )
+
+            return domain
+
+        except Exception:
+
+            return ""
+
+    # =====================================================
+    # SAME ORIGINAL SOURCE
+    # =====================================================
+
+    def _same_original_source(
+        self,
+        first: Dict[str, Any],
+        second: Dict[str, Any]
+    ) -> bool:
+
+        first_original = str(
+            first.get(
+                "original_source",
+                first.get(
+                    "quoted_source",
+                    ""
+                )
+            )
+        ).strip().lower()
+
+        second_original = str(
+            second.get(
+                "original_source",
+                second.get(
+                    "quoted_source",
+                    ""
+                )
+            )
+        ).strip().lower()
+
+        if not first_original:
+            return False
+
+        if not second_original:
+            return False
+
+        return (
+            first_original
+            ==
+            second_original
+        )
+
+    # =====================================================
+    # TEXT TOKENS
+    # =====================================================
+
+    def _tokens(
+        self,
+        text: str
+    ) -> List[str]:
+
+        text = str(
+            text
+            or
+            ""
+        ).lower()
+
+        words = re.findall(
+            r"\b[a-z0-9]{3,}\b",
+            text
+        )
+
+        # Remove common words so that similarity
+        # focuses more on meaningful terms.
+        stopwords = {
+            "the",
+            "and",
+            "that",
+            "this",
+            "with",
+            "from",
+            "have",
+            "has",
+            "were",
+            "been",
+            "will",
+            "would",
+            "could",
+            "should",
+            "about",
+            "after",
+            "before",
+            "into",
+            "their",
+            "there",
+            "they",
+            "them",
+            "than",
+            "then",
+            "when",
+            "where",
+            "which",
+            "while",
+            "what",
+            "said",
+            "says"
+        }
+
+        return [
+            word
+            for word
+            in words
+            if word
+            not in stopwords
+        ]
+
+    # =====================================================
+    # TEXT SIMILARITY
+    # =====================================================
+
+    def _similarity(
+        self,
+        first: str,
+        second: str
+    ) -> float:
+
+        first_tokens = set(
+            self._tokens(
+                first
+            )
+        )
+
+        second_tokens = set(
+            self._tokens(
+                second
+            )
+        )
+
+        if not first_tokens:
+            return 0.0
+
+        if not second_tokens:
+            return 0.0
+
+        intersection = (
+            first_tokens
+            &
+            second_tokens
+        )
+
+        union = (
+            first_tokens
+            |
+            second_tokens
+        )
+
+        if not union:
+            return 0.0
+
+        return (
+            len(
+                intersection
+            )
+            /
+            len(
+                union
+            )
+        )
+
+    # =====================================================
+    # UNIQUE VALUES
+    # =====================================================
+
+    def _unique(
+        self,
+        values: List[Any]
+    ) -> List[Any]:
+
+        result = []
+
+        seen = set()
+
+        for value in values:
+
+            if value is None:
+                continue
+
+            value_key = str(
+                value
+            ).strip()
+
+            if not value_key:
+                continue
+
+            normalized = (
+                value_key.lower()
+            )
+
+            if normalized in seen:
+                continue
+
+            seen.add(
+                normalized
+            )
+
+            result.append(
+                value_key
+            )
+
+        return result
+
+
+# =========================================================
+# SIMPLE FUNCTION API
+# =========================================================
+
+def analyze_corroboration(
+    sources: List[Dict[str, Any]],
+    claims: List[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+
+    engine = CorroborationEngine()
+
+    return engine.analyze(
+        sources=sources,
+        claims=claims
+    )
+
+
+# =========================================================
+# TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    test_sources = [
+
+        {
+            "source_id": "source_1",
+            "publisher": "Example News",
+            "url": "https://example.com/story",
+            "type": "news",
+            "title": "Example story",
+            "content": (
+                "Officials announced a new development "
+                "in the investigation."
+            )
+        },
+
+        {
+            "source_id": "source_2",
+            "publisher": "Example Wire",
+            "url": "https://wire.example.com/story",
+            "type": "wire",
+            "title": "Officials announce development",
+            "content": (
+                "Officials announced a new development "
+                "in the investigation."
+            )
+        }
+    ]
+
+    test_claims = [
+
+        {
+            "claim_id": "claim_1",
+            "claim": (
+                "Officials announced a new development "
+                "in the investigation."
+            )
+        }
+    ]
+
+    engine = CorroborationEngine()
+
+    result = engine.analyze(
+        sources=test_sources,
+        claims=test_claims
+    )
+
+    print(
+        result
+    )
