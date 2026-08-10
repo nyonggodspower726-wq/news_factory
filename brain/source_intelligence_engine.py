@@ -2,61 +2,14 @@
 AI NEWS FACTORY
 SOURCE INTELLIGENCE ENGINE
 
-Purpose
--------
-Evaluate news sources before their information is allowed
-to influence the reporting pipeline.
-
-The engine evaluates:
-
-    - source authority
-    - source type
-    - primary-source status
-    - independence
-    - corroboration
-    - freshness
-    - transparency
-    - attribution quality
-    - duplication
-    - possible source-chain problems
-    - conflict signals
-
-CORE PRINCIPLE
---------------
-A story repeated by 50 accounts is not necessarily
-50 independent confirmations.
-
-The engine attempts to identify:
-
-    ORIGINAL SOURCE
-        ↓
-    PRIMARY REPORT
-        ↓
-    SECONDARY REPORTS
-        ↓
-    SOCIAL AMPLIFICATION
-
-This prevents social-media repetition from being mistaken
-for independent verification.
-
-IMPORTANT
----------
-This engine scores and organizes sources.
-
-It does not magically prove that a source is true.
-
-Final publication decisions should also involve:
-
-    claim_engine
-    fact_checker
-    source_verification
-    editor_engine
+Evaluates and organizes news sources before information
+is allowed to influence the reporting pipeline.
 """
-
 
 from typing import Any, Dict, List
 from collections import defaultdict
 from urllib.parse import urlparse
+from difflib import SequenceMatcher
 import re
 
 
@@ -68,61 +21,29 @@ class SourceIntelligenceEngine:
         self.version = "1.0.0"
 
         self.source_type_weights = {
-
-            "PRIMARY":
-                100,
-
-            "OFFICIAL":
-                100,
-
-            "GOVERNMENT":
-                95,
-
-            "COURT":
-                95,
-
-            "REGULATORY":
-                95,
-
-            "ACADEMIC":
-                90,
-
-            "ESTABLISHED_NEWS":
-                85,
-
-            "SPECIALIST_MEDIA":
-                80,
-
-            "LOCAL_NEWS":
-                75,
-
-            "EXPERT":
-                75,
-
-            "WIRE":
-                85,
-
-            "BLOG":
-                50,
-
-            "SOCIAL":
-                30,
-
-            "USER_GENERATED":
-                20,
-
-            "UNKNOWN":
-                25
+            "PRIMARY": 100,
+            "OFFICIAL": 100,
+            "GOVERNMENT": 95,
+            "COURT": 95,
+            "REGULATORY": 95,
+            "ACADEMIC": 90,
+            "ESTABLISHED_NEWS": 85,
+            "WIRE": 85,
+            "SPECIALIST_MEDIA": 80,
+            "LOCAL_NEWS": 75,
+            "EXPERT": 75,
+            "BLOG": 50,
+            "SOCIAL": 30,
+            "USER_GENERATED": 20,
+            "UNKNOWN": 25,
         }
 
         self.high_risk_source_types = {
-
             "UNKNOWN",
-            "USER_GENERATED"
+            "USER_GENERATED",
         }
 
         self.social_domains = {
-
             "twitter.com",
             "x.com",
             "facebook.com",
@@ -130,11 +51,10 @@ class SourceIntelligenceEngine:
             "tiktok.com",
             "youtube.com",
             "reddit.com",
-            "threads.net"
+            "threads.net",
         }
 
         self.official_keywords = {
-
             "gov",
             "government",
             "official",
@@ -143,11 +63,11 @@ class SourceIntelligenceEngine:
             "police",
             "agency",
             "regulator",
-            "university"
+            "university",
         }
 
     # =====================================================
-    # MAIN
+    # MAIN ANALYSIS
     # =====================================================
 
     def analyze(
@@ -155,89 +75,52 @@ class SourceIntelligenceEngine:
         sources: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
 
-        normalized = self._normalize_sources(
-            sources
-        )
+        normalized = self._normalize_sources(sources)
 
         scored = []
 
         for source in normalized:
-
             scored.append(
-                self._score_source(
-                    source
-                )
+                self._score_source(source)
             )
 
-        clusters = self._cluster_sources(
+        clusters = self._cluster_sources(scored)
+
+        independence = self._independence_analysis(
+            scored,
+            clusters
+        )
+
+        source_chain = self._build_source_chain(
             scored
         )
 
-        independence = (
-            self._independence_analysis(
-                scored,
-                clusters
-            )
+        conflicts = self._detect_conflicts(
+            scored
         )
 
-        source_chain = (
-            self._build_source_chain(
-                scored
-            )
-        )
-
-        conflicts = (
-            self._detect_conflicts(
-                scored
-            )
-        )
-
-        overall = (
-            self._overall_source_quality(
-                scored,
-                independence,
-                conflicts
-            )
+        overall = self._overall_source_quality(
+            scored,
+            independence,
+            conflicts
         )
 
         return {
-
-            "engine":
-                self.name,
-
-            "version":
-                self.version,
-
-            "status":
-                "ANALYZED",
-
-            "source_count":
-                len(scored),
-
-            "sources":
-                scored,
-
-            "source_clusters":
-                clusters,
-
-            "independence":
-                independence,
-
-            "source_chain":
-                source_chain,
-
-            "conflicts":
-                conflicts,
-
-            "overall_quality":
+            "engine": self.name,
+            "version": self.version,
+            "status": "ANALYZED",
+            "source_count": len(scored),
+            "sources": scored,
+            "source_clusters": clusters,
+            "independence": independence,
+            "source_chain": source_chain,
+            "conflicts": conflicts,
+            "overall_quality": overall,
+            "recommendation": self._recommendation(
                 overall,
-
-            "recommendation":
-                self._recommendation(
-                    overall,
-                    conflicts,
-                    independence
-                )
+                conflicts,
+                independence
+            ),
         }
 
     # =====================================================
@@ -249,69 +132,39 @@ class SourceIntelligenceEngine:
         sources: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
 
-        if isinstance(
-            sources,
-            dict
-        ):
+        if isinstance(sources, dict):
+            sources = list(sources.values())
 
-            sources = list(
-                sources.values()
-            )
-
-        if not isinstance(
-            sources,
-            list
-        ):
-
+        if not isinstance(sources, list):
             return []
 
         normalized = []
 
-        for index, source in enumerate(
-            sources
-        ):
+        for index, source in enumerate(sources):
 
-            if isinstance(
-                source,
-                str
-            ):
-
+            if isinstance(source, str):
                 source = {
-                    "url":
-                        source
+                    "url": source
                 }
 
-            if not isinstance(
-                source,
-                dict
-            ):
-
+            if not isinstance(source, dict):
                 continue
 
             url = str(
-                source.get(
-                    "url",
-                    ""
-                )
+                source.get("url", "")
             ).strip()
 
             title = str(
                 source.get(
                     "title",
-                    source.get(
-                        "headline",
-                        ""
-                    )
+                    source.get("headline", "")
                 )
             ).strip()
 
             name = str(
                 source.get(
                     "name",
-                    source.get(
-                        "publisher",
-                        ""
-                    )
+                    source.get("publisher", "")
                 )
             ).strip()
 
@@ -325,102 +178,65 @@ class SourceIntelligenceEngine:
                 )
             ).upper()
 
-            domain = (
-                self._domain(
-                    url
-                )
-            )
+            domain = self._domain(url)
 
             if not name:
-
                 name = domain or "Unknown Source"
 
             normalized.append({
-
-                "id":
+                "id": source.get(
+                    "id",
+                    f"source_{index + 1}"
+                ),
+                "url": url,
+                "title": title,
+                "name": name,
+                "domain": domain,
+                "type": source_type,
+                "published_at": source.get(
+                    "published_at"
+                ),
+                "retrieved_at": source.get(
+                    "retrieved_at"
+                ),
+                "author": source.get(
+                    "author"
+                ),
+                "text": source.get(
+                    "text",
                     source.get(
-                        "id",
-                        f"source_{index + 1}"
-                    ),
-
-                "url":
-                    url,
-
-                "title":
-                    title,
-
-                "name":
-                    name,
-
-                "domain":
-                    domain,
-
-                "type":
-                    source_type,
-
-                "published_at":
-                    source.get(
-                        "published_at"
-                    ),
-
-                "retrieved_at":
-                    source.get(
-                        "retrieved_at"
-                    ),
-
-                "author":
-                    source.get(
-                        "author"
-                    ),
-
-                "text":
-                    source.get(
-                        "text",
-                        source.get(
-                            "excerpt",
-                            ""
-                        )
-                    ),
-
-                "primary":
-                    bool(
-                        source.get(
-                            "primary",
-                            False
-                        )
-                    ),
-
-                "official":
-                    bool(
-                        source.get(
-                            "official",
-                            False
-                        )
-                    ),
-
-                "independent":
-                    bool(
-                        source.get(
-                            "independent",
-                            False
-                        )
-                    ),
-
-                "authority":
-                    source.get(
-                        "authority",
-                        0
-                    ),
-
-                "original_source":
-                    source.get(
-                        "original_source"
-                    ),
-
-                "reliability":
-                    source.get(
-                        "reliability"
+                        "excerpt",
+                        ""
                     )
+                ),
+                "primary": bool(
+                    source.get(
+                        "primary",
+                        False
+                    )
+                ),
+                "official": bool(
+                    source.get(
+                        "official",
+                        False
+                    )
+                ),
+                "independent": bool(
+                    source.get(
+                        "independent",
+                        False
+                    )
+                ),
+                "authority": source.get(
+                    "authority",
+                    0
+                ),
+                "original_source": source.get(
+                    "original_source"
+                ),
+                "reliability": source.get(
+                    "reliability"
+                ),
             })
 
         return normalized
@@ -444,9 +260,7 @@ class SourceIntelligenceEngine:
 
         primary_score = (
             100
-            if source.get(
-                "primary"
-            )
+            if source.get("primary")
             else 0
         )
 
@@ -456,90 +270,46 @@ class SourceIntelligenceEngine:
 
         independence = (
             100
-            if source.get(
-                "independent"
-            )
+            if source.get("independent")
             else 50
         )
 
         duplication_risk = 0
 
-        if self._is_social_source(
-            source
-        ):
-
+        if self._is_social_source(source):
             duplication_risk += 20
 
-        if not source.get(
-            "author"
-        ):
-
+        if not source.get("author"):
             duplication_risk += 5
 
         total = (
-
             authority * 0.30
-
-            +
-
-            transparency * 0.15
-
-            +
-
-            primary_score * 0.20
-
-            +
-
-            freshness * 0.10
-
-            +
-
-            independence * 0.10
-
-            +
-
-            (100 - duplication_risk) * 0.15
+            + transparency * 0.15
+            + primary_score * 0.20
+            + freshness * 0.10
+            + independence * 0.10
+            + (100 - duplication_risk) * 0.15
         )
 
         total = int(
             max(
                 0,
-                min(
-                    total,
-                    100
-                )
+                min(total, 100)
             )
         )
 
         return {
-
             **source,
-
-            "authority_score":
-                authority,
-
-            "transparency_score":
-                transparency,
-
-            "primary_source_score":
-                primary_score,
-
-            "freshness_score":
-                freshness,
-
-            "independence_score":
-                independence,
-
-            "duplication_risk":
-                duplication_risk,
-
-            "quality_score":
-                total,
-
-            "classification":
-                self._classification(
-                    total
-                )
+            "authority_score": authority,
+            "transparency_score": transparency,
+            "primary_source_score": primary_score,
+            "freshness_score": freshness,
+            "independence_score": independence,
+            "duplication_risk": duplication_risk,
+            "quality_score": total,
+            "classification": self._classification(
+                total
+            ),
         }
 
     # =====================================================
@@ -559,19 +329,13 @@ class SourceIntelligenceEngine:
 
             try:
 
-                value = float(
-                    explicit
-                )
+                value = float(explicit)
 
                 if value > 0:
-
                     return int(
                         max(
                             0,
-                            min(
-                                value,
-                                100
-                            )
+                            min(value, 100)
                         )
                     )
 
@@ -579,7 +343,6 @@ class SourceIntelligenceEngine:
                 TypeError,
                 ValueError
             ):
-
                 pass
 
         source_type = source.get(
@@ -592,10 +355,7 @@ class SourceIntelligenceEngine:
             25
         )
 
-        if source.get(
-            "official"
-        ):
-
+        if source.get("official"):
             score = max(
                 score,
                 90
@@ -610,7 +370,6 @@ class SourceIntelligenceEngine:
             keyword in domain
             for keyword in self.official_keywords
         ):
-
             score += 5
 
         return min(
@@ -629,34 +388,19 @@ class SourceIntelligenceEngine:
 
         score = 35
 
-        if source.get(
-            "name"
-        ):
-
+        if source.get("name"):
             score += 15
 
-        if source.get(
-            "author"
-        ):
-
+        if source.get("author"):
             score += 15
 
-        if source.get(
-            "published_at"
-        ):
-
+        if source.get("published_at"):
             score += 15
 
-        if source.get(
-            "url"
-        ):
-
+        if source.get("url"):
             score += 10
 
-        if source.get(
-            "text"
-        ):
-
+        if source.get("text"):
             score += 10
 
         return min(
@@ -678,24 +422,17 @@ class SourceIntelligenceEngine:
         ) is not None:
 
             try:
-
                 return int(
-                    source[
-                        "freshness_score"
-                    ]
+                    source["freshness_score"]
                 )
 
             except (
                 TypeError,
                 ValueError
             ):
-
                 pass
 
-        if source.get(
-            "published_at"
-        ):
-
+        if source.get("published_at"):
             return 80
 
         return 50
@@ -721,16 +458,11 @@ class SourceIntelligenceEngine:
                     cluster["sources"][0]
                 )
 
-                similarity = (
-                    self._text_similarity(
-                        source.get(
-                            "title",
-                            ""
-                        ),
-                        representative.get(
-                            "title",
-                            ""
-                        )
+                similarity = self._text_similarity(
+                    source.get("title", ""),
+                    representative.get(
+                        "title",
+                        ""
                     )
                 )
 
@@ -750,96 +482,66 @@ class SourceIntelligenceEngine:
 
                 if (
                     similarity >= 0.45
-                    or
-                    same_original
+                    or same_original
                 ):
 
                     cluster[
                         "sources"
-                    ].append(
-                        source
-                    )
+                    ].append(source)
 
                     placed = True
-
                     break
 
             if not placed:
 
                 clusters.append({
-
                     "cluster_id":
                         f"cluster_{len(clusters) + 1}",
-
-                    "sources":
-                        [
-                            source
-                        ]
+                    "sources": [
+                        source
+                    ],
                 })
 
         result = []
 
         for cluster in clusters:
 
-            cluster_sources = (
-                cluster[
-                    "sources"
-                ]
-            )
+            cluster_sources = cluster[
+                "sources"
+            ]
 
             domains = self._unique(
                 [
-                    source.get(
-                        "domain"
-                    )
-                    for source
-                    in cluster_sources
-                    if source.get(
-                        "domain"
-                    )
+                    source.get("domain")
+                    for source in cluster_sources
+                    if source.get("domain")
                 ]
             )
 
             result.append({
-
                 "cluster_id":
-                    cluster[
-                        "cluster_id"
-                    ],
+                    cluster["cluster_id"],
 
                 "source_count":
-                    len(
-                        cluster_sources
-                    ),
+                    len(cluster_sources),
 
                 "independent_domains":
-                    len(
-                        domains
-                    ),
+                    len(domains),
 
                 "domains":
                     domains,
 
                 "primary_sources":
                     [
-                        source.get(
-                            "name"
-                        )
-                        for source
-                        in cluster_sources
-                        if source.get(
-                            "primary"
-                        )
+                        source.get("name")
+                        for source in cluster_sources
+                        if source.get("primary")
                     ],
 
                 "likely_repetition":
-                    len(
-                        domains
-                    ) <= 1
+                    len(domains) <= 1
                     and
-                    len(
-                        cluster_sources
-                    ) > 1
+                    len(cluster_sources) > 1,
             })
 
         return result
@@ -856,39 +558,27 @@ class SourceIntelligenceEngine:
 
         domains = self._unique(
             [
-                source.get(
-                    "domain"
-                )
-                for source
-                in sources
-                if source.get(
-                    "domain"
-                )
+                source.get("domain")
+                for source in sources
+                if source.get("domain")
             ]
         )
 
         explicit_independent = sum(
             1
-            for source
-            in sources
-            if source.get(
-                "independent"
-            )
+            for source in sources
+            if source.get("independent")
         )
 
         primary_count = sum(
             1
-            for source
-            in sources
-            if source.get(
-                "primary"
-            )
+            for source in sources
+            if source.get("primary")
         )
 
         repeated_clusters = sum(
             1
-            for cluster
-            in clusters
+            for cluster in clusters
             if cluster.get(
                 "likely_repetition"
             )
@@ -925,7 +615,6 @@ class SourceIntelligenceEngine:
         )
 
         return {
-
             "unique_domains":
                 len(domains),
 
@@ -947,7 +636,7 @@ class SourceIntelligenceEngine:
             "classification":
                 self._independence_classification(
                     independent_score
-                )
+                ),
         }
 
     # =====================================================
@@ -960,32 +649,80 @@ class SourceIntelligenceEngine:
     ) -> Dict[str, Any]:
 
         primary = []
-
         secondary = []
-
         social = []
-
         unknown = []
 
         for source in sources:
 
-            if source.get(
-                "primary"
-            ) or source.get(
-                "official"
+            name = source.get(
+                "name",
+                "Unknown Source"
+            )
+
+            if (
+                source.get("primary")
+                or
+                source.get("official")
             ):
 
-                primary.append(
-                    source.get(
-                        "name"
-                    )
-                )
+                primary.append(name)
 
             elif self._is_social_source(
                 source
             ):
 
-                social.append(
-                    source.get(
-                        "name"
-            
+                social.append(name)
+
+            elif source.get("type") in (
+                "ESTABLISHED_NEWS",
+                "WIRE",
+                "SPECIALIST_MEDIA",
+                "LOCAL_NEWS",
+            ):
+
+                secondary.append(name)
+
+            else:
+
+                unknown.append(name)
+
+        return {
+            "primary": self._unique(primary),
+            "secondary": self._unique(secondary),
+            "social": self._unique(social),
+            "unknown": self._unique(unknown),
+            "primary_count": len(primary),
+            "secondary_count": len(secondary),
+            "social_count": len(social),
+            "unknown_count": len(unknown),
+        }
+
+    # =====================================================
+    # CONFLICT DETECTION
+    # =====================================================
+
+    def _detect_conflicts(
+        self,
+        sources: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        conflicts = []
+
+        for index, source in enumerate(sources):
+
+            text_a = str(
+                source.get(
+                    "text",
+                    ""
+                )
+            ).lower()
+
+            title_a = str(
+                source.get(
+                    "title",
+                    ""
+                )
+            ).lower()
+
+            for other in sources[index + 1
