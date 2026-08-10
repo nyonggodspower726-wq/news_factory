@@ -886,3 +886,247 @@ class AngleFinder:
         return self.analyze(
             story
         )
+    # =====================================================
+    # BATCH ANALYSIS
+    # =====================================================
+
+    def analyze_many(
+        self,
+        stories: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        results = []
+
+        for story in stories:
+
+            try:
+                result = self.analyze(
+                    story
+                )
+
+                results.append(
+                    result
+                )
+
+            except Exception as exc:
+
+                results.append(
+                    {
+                        "success": False,
+                        "error": str(exc),
+                        "story": story
+                    }
+                )
+
+        return results
+
+    # =====================================================
+    # BEST ANGLE FROM MULTIPLE STORIES
+    # =====================================================
+
+    def best_angle_from_stories(
+        self,
+        stories: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+
+        results = self.analyze_many(
+            stories
+        )
+
+        candidates = []
+
+        for result in results:
+
+            primary = result.get(
+                "primary_angle"
+            )
+
+            if primary:
+                candidates.append(
+                    primary
+                )
+
+        if not candidates:
+            return None
+
+        candidates.sort(
+            key=lambda item: item.get(
+                "total_score",
+                0
+            ),
+            reverse=True
+        )
+
+        return candidates[0]
+
+    # =====================================================
+    # HEALTH CHECK
+    # =====================================================
+
+    def health_check(
+        self
+    ) -> Dict[str, Any]:
+
+        return {
+            "engine": "AngleFinder",
+            "status": "ready",
+            "angle_types": len(
+                self.angle_types
+            ),
+            "minimum_score":
+                self.minimum_score
+        }
+
+
+# =========================================================
+# DEFAULT ENGINE INSTANCE
+# =========================================================
+
+angle_finder = AngleFinder()
+
+
+# =========================================================
+# MODULE-LEVEL HELPERS
+# =========================================================
+
+def find_angles(
+    story: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    return angle_finder.find_angles(
+        story
+    )
+
+
+def analyze(
+    story: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    return angle_finder.analyze(
+        story
+    )
+
+
+def run(
+    story: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    return angle_finder.run(
+        story
+    )
+
+
+def get_primary_angle(
+    story: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+
+    return angle_finder.get_primary_angle(
+        story
+    )
+
+
+def get_backup_angles(
+    story: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+
+    return angle_finder.get_backup_angles(
+        story
+    )
+
+
+# =========================================================
+# PUBLIC EXPORTS
+# =========================================================
+
+__all__ = [
+    "AngleFinder",
+    "angle_finder",
+    "find_angles",
+    "analyze",
+    "run",
+    "get_primary_angle",
+    "get_backup_angles",
+]
+
+
+# =========================================================
+# DIRECT TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    test_story = {
+        "story": {
+            "title": "Example News Story",
+            "summary": (
+                "An example confirmed development "
+                "has occurred."
+            ),
+            "evidence": [
+                "Confirmed source A",
+                "Confirmed source B"
+            ],
+            "claims": [
+                "Example confirmed claim"
+            ],
+            "locations": [],
+            "uncertainty": "normal"
+        }
+    }
+
+    try:
+
+        result = angle_finder.analyze(
+            test_story
+        )
+
+        print(
+            "\nANGLE FINDER TEST"
+        )
+
+        print(
+            "Status:",
+            result.get(
+                "status",
+                "unknown"
+            )
+        )
+
+        primary = result.get(
+            "primary_angle"
+        )
+
+        if primary:
+
+            print(
+                "Primary angle:",
+                primary.get(
+                    "type"
+                )
+            )
+
+            print(
+                "Title:",
+                primary.get(
+                    "title"
+                )
+            )
+
+            print(
+                "Score:",
+                primary.get(
+                    "total_score"
+                )
+            )
+
+        print(
+            "Health:",
+            angle_finder.health_check()
+        )
+
+    except Exception as exc:
+
+        print(
+            "AngleFinder test failed:",
+            str(exc)
+        )
