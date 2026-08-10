@@ -39,7 +39,7 @@ The AI/LLM layer can later use this structured output to
 perform deeper reasoning.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class AngleFinder:
