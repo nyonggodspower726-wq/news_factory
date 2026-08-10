@@ -2,180 +2,186 @@
 AI NEWS FACTORY
 SCHEDULER
 
-Controls the recurring News Factory workflow.
+The scheduler is responsible only for triggering the factory.
+
+It does NOT call individual brain engines.
+The brain pipeline is handled by:
 
 main.py
-   ↓
-scheduler.py
-   ↓
-NewsFactory
-   ↓
-Collect → Analyze → Verify → Write
-→ Psychology → Quality Control
-→ Website → Social
+    ↓
+brain/pipeline.py
 """
 
 import asyncio
 import logging
-import os
 from datetime import datetime
 
 from main import NewsFactory
 
 
-logger = logging.getLogger("NewsFactoryScheduler")
+logger = logging.getLogger("NewsFactory.Scheduler")
 
 
-# ---------------------------------------------------------
-# SETTINGS
-# ---------------------------------------------------------
-
-INTERVAL_MINUTES = int(
-    os.getenv(
-        "FACTORY_INTERVAL_MINUTES",
-        "15"
-    )
-)
-
-INTERVAL_SECONDS = max(
-    60,
-    INTERVAL_MINUTES * 60
-)
-
-
-# ---------------------------------------------------------
+# =========================================================
 # SCHEDULER
-# ---------------------------------------------------------
+# =========================================================
 
 class NewsScheduler:
 
-    def __init__(
-        self,
-        factory=None
-    ):
+    def __init__(self, interval_seconds=300):
 
-        self.factory = (
-            factory
-            or NewsFactory()
-        )
-
+        self.interval_seconds = interval_seconds
         self.running = False
 
-        self.cycle_number = 0
+        self.factory = NewsFactory()
 
-    # -----------------------------------------------------
-    # RUN ONE CYCLE
-    # -----------------------------------------------------
-
-    async def run_cycle(self):
-
-        self.cycle_number += 1
-
-        logger.info(
-            "=" * 60
-        )
-
-        logger.info(
-            "NEWS FACTORY CYCLE #%s",
-            self.cycle_number
-        )
-
-        logger.info(
-            "Cycle started: %s",
-            datetime.now().isoformat()
-        )
-
-        try:
-
-            # The NewsFactory will eventually perform the
-            # complete intelligence pipeline here.
-
-            await self.factory.start()
-
-            logger.info(
-                "Factory cycle completed successfully."
-            )
-
-        except Exception as error:
-
-            logger.exception(
-                "Factory cycle failed: %s",
-                error
-            )
-
-    # -----------------------------------------------------
+    # =====================================================
     # START
-    # -----------------------------------------------------
+    # =====================================================
 
     async def start(self):
 
         self.running = True
 
+        logger.info("=" * 60)
+        logger.info("AI NEWS FACTORY SCHEDULER")
+        logger.info("=" * 60)
+
+        await self.factory.start()
+
         logger.info(
-            "News Scheduler started."
+            "Scheduler started."
         )
 
         logger.info(
-            "Interval: %s minutes",
-            INTERVAL_MINUTES
+            "Interval: %s seconds",
+            self.interval_seconds
         )
 
         while self.running:
 
             try:
 
+                logger.info(
+                    "Scheduler cycle started: %s",
+                    datetime.now().isoformat()
+                )
+
                 await self.run_cycle()
 
             except Exception as error:
 
                 logger.exception(
-                    "Scheduler error: %s",
+                    "Scheduler cycle failed: %s",
                     error
                 )
 
-            if not self.running:
+            if self.running:
 
-                break
+                logger.info(
+                    "Next cycle in %s seconds.",
+                    self.interval_seconds
+                )
+
+                await asyncio.sleep(
+                    self.interval_seconds
+                )
+
+    # =====================================================
+    # ONE CYCLE
+    # =====================================================
+
+    async def run_cycle(self):
+
+        """
+        One complete factory cycle.
+
+        News collection will be connected here when the
+        collection/body layer is ready.
+        """
+
+        logger.info(
+            "Preparing intelligence cycle..."
+        )
+
+        # -------------------------------------------------
+        # NEWS COLLECTION
+        # -------------------------------------------------
+        #
+        # This will eventually become:
+        #
+        # sources = news_collector.collect()
+        #
+        # For now the brain remains idle until real sources
+        # are supplied.
+        #
+        # -------------------------------------------------
+
+        sources = []
+
+        story = {}
+
+        topic = ""
+
+        if not sources and not story:
 
             logger.info(
-                "Next factory cycle in %s minutes.",
-                INTERVAL_MINUTES
+                "No news input available yet."
             )
 
-            await asyncio.sleep(
-                INTERVAL_SECONDS
+            logger.info(
+                "Brain pipeline waiting for news collector."
             )
 
-    # -----------------------------------------------------
+            return
+
+        # -------------------------------------------------
+        # SEND EVERYTHING TO CENTRAL BRAIN
+        # -------------------------------------------------
+
+        result = await self.factory.process_story(
+            sources=sources,
+            story=story,
+            topic=topic
+        )
+
+        logger.info(
+            "Pipeline result: %s",
+            result.get(
+                "pipeline_status",
+                "UNKNOWN"
+            )
+        )
+
+    # =====================================================
     # STOP
-    # -----------------------------------------------------
+    # =====================================================
 
     async def stop(self):
 
+        if not self.running:
+            return
+
         self.running = False
 
-        try:
-
-            await self.factory.stop()
-
-        except Exception:
-
-            logger.exception(
-                "Error while stopping factory."
-            )
+        await self.factory.stop()
 
         logger.info(
-            "News Scheduler stopped."
+            "Scheduler stopped."
         )
 
 
-# ---------------------------------------------------------
-# APPLICATION
-# ---------------------------------------------------------
+# =========================================================
+# START FUNCTION
+# =========================================================
 
-async def main():
+async def start_scheduler(
+    interval_seconds=300
+):
 
-    scheduler = NewsScheduler()
+    scheduler = NewsScheduler(
+        interval_seconds=interval_seconds
+    )
 
     try:
 
@@ -184,14 +190,7 @@ async def main():
     except KeyboardInterrupt:
 
         logger.info(
-            "Shutdown requested."
-        )
-
-    except Exception as error:
-
-        logger.exception(
-            "Fatal scheduler error: %s",
-            error
+            "Scheduler shutdown requested."
         )
 
     finally:
@@ -199,12 +198,21 @@ async def main():
         await scheduler.stop()
 
 
-# ---------------------------------------------------------
-# RUN
-# ---------------------------------------------------------
+# =========================================================
+# RUN DIRECTLY
+# =========================================================
 
 if __name__ == "__main__":
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format=(
+            "%(asctime)s | "
+            "%(levelname)s | "
+            "%(message)s"
+        )
+    )
+
     asyncio.run(
-        main()
-)
+        start_scheduler()
+   )
