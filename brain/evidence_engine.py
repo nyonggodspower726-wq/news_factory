@@ -167,3 +167,25 @@ def analyze_evidence(claims,sources):
 
 def analyze(claims,sources):
     return evidence_engine.analyze(claims,sources)
+if __name__=="__main__":
+    test_claims=[{
+        "id":"claim_1",
+        "text":"Officials announced a new development.",
+        "type":"FACT"
+    }]
+    test_sources=[{
+        "id":"source_1",
+        "name":"Example News",
+        "domain":"example.com",
+        "title":"Officials announced a new development",
+        "text":"Officials announced a new development.",
+        "type":"ESTABLISHED_NEWS",
+        "quality_score":80,
+        "published_at":"2026-08-11"
+    }]
+    print(
+        analyze_evidence(
+            test_claims,
+            test_sources
+        )
+    )
