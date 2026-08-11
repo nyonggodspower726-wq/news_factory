@@ -44,7 +44,6 @@ This engine is an editorial planning layer.
 It does not write the final article by itself.
 """
 
-
 from typing import Any, Dict, List
 import re
 
@@ -127,11 +126,9 @@ class EngagementEngine:
             story
         )
 
-        continuation = (
-            self._continuation_strategy(
-                story,
-                sections
-            )
+        continuation = self._continuation_strategy(
+            story,
+            sections
         )
 
         score = self._engagement_score(
@@ -143,7 +140,6 @@ class EngagementEngine:
         )
 
         return {
-
             "engine":
                 self.name,
 
@@ -229,23 +225,18 @@ class EngagementEngine:
         )
 
         if event and impact:
-
             style = "EVENT_PLUS_IMPACT"
 
         elif event and subject:
-
             style = "DIRECT_NEWS_LEAD"
 
         elif event:
-
             style = "DIRECT_EVENT_LEAD"
 
         else:
-
             style = "CONTEXT_FIRST"
 
         return {
-
             "style":
                 style,
 
@@ -287,10 +278,7 @@ class EngagementEngine:
             raw,
             str
         ):
-
-            raw = [
-                raw
-            ]
+            raw = [raw]
 
         if isinstance(
             raw,
@@ -304,22 +292,16 @@ class EngagementEngine:
             )
 
         defaults = [
-
             "What happened?",
-
             "Why does it matter?",
-
             "Who is affected?",
-
             "What do we know so far?",
-
             "What happens next?"
         ]
 
         for question in defaults:
 
             if question not in questions:
-
                 questions.append(
                     question
                 )
@@ -327,7 +309,6 @@ class EngagementEngine:
         if story.get(
             "timeline"
         ):
-
             questions.append(
                 "How did we get here?"
             )
@@ -335,7 +316,6 @@ class EngagementEngine:
         if story.get(
             "controversy"
         ):
-
             questions.append(
                 "What is disputed?"
             )
@@ -343,7 +323,6 @@ class EngagementEngine:
         if story.get(
             "economic_impact"
         ):
-
             questions.append(
                 "What could this mean economically?"
             )
@@ -365,7 +344,6 @@ class EngagementEngine:
         sections = []
 
         sections.append({
-
             "id":
                 "WHAT_HAPPENED",
 
@@ -386,7 +364,6 @@ class EngagementEngine:
         ):
 
             sections.append({
-
                 "id":
                     "WHY_IT_MATTERS",
 
@@ -405,7 +382,6 @@ class EngagementEngine:
         ):
 
             sections.append({
-
                 "id":
                     "WHO_IS_AFFECTED",
 
@@ -424,7 +400,6 @@ class EngagementEngine:
         ):
 
             sections.append({
-
                 "id":
                     "TIMELINE",
 
@@ -445,7 +420,6 @@ class EngagementEngine:
         ):
 
             sections.append({
-
                 "id":
                     "BACKGROUND",
 
@@ -464,7 +438,6 @@ class EngagementEngine:
         ):
 
             sections.append({
-
                 "id":
                     "CONSEQUENCES",
 
@@ -483,7 +456,6 @@ class EngagementEngine:
         ):
 
             sections.append({
-
                 "id":
                     "WHAT_HAPPENS_NEXT",
 
@@ -498,7 +470,6 @@ class EngagementEngine:
             })
 
         sections.append({
-
             "id":
                 "WHAT_WE_DONT_KNOW",
 
@@ -532,7 +503,6 @@ class EngagementEngine:
         )
 
         try:
-
             article_length = int(
                 article_length
             )
@@ -541,23 +511,18 @@ class EngagementEngine:
             TypeError,
             ValueError
         ):
-
             article_length = 800
 
         if article_length < 500:
-
             paragraph_target = "2-3 sentences"
 
         elif article_length < 1200:
-
             paragraph_target = "2-4 sentences"
 
         else:
-
             paragraph_target = "2-5 sentences"
 
         return {
-
             "target_word_count":
                 article_length,
 
@@ -658,7 +623,6 @@ class EngagementEngine:
                 )
 
             curiosity_points.append({
-
                 "order":
                     index + 1,
 
@@ -685,7 +649,6 @@ class EngagementEngine:
         if story.get(
             "affected_groups"
         ):
-
             signals.append(
                 "PEOPLE_AFFECTED"
             )
@@ -693,7 +656,6 @@ class EngagementEngine:
         if story.get(
             "economic_impact"
         ):
-
             signals.append(
                 "ECONOMIC_IMPACT"
             )
@@ -701,7 +663,6 @@ class EngagementEngine:
         if story.get(
             "political_impact"
         ):
-
             signals.append(
                 "POLICY_IMPACT"
             )
@@ -709,7 +670,6 @@ class EngagementEngine:
         if story.get(
             "practical_impact"
         ):
-
             signals.append(
                 "PRACTICAL_IMPACT"
             )
@@ -717,7 +677,6 @@ class EngagementEngine:
         if story.get(
             "location"
         ):
-
             signals.append(
                 "GEOGRAPHIC_RELEVANCE"
             )
@@ -725,13 +684,11 @@ class EngagementEngine:
         if story.get(
             "what_happens_next"
         ):
-
             signals.append(
                 "FUTURE_DEVELOPMENT"
             )
 
         return {
-
             "signals":
                 signals,
 
@@ -763,7 +720,6 @@ class EngagementEngine:
         if not body:
 
             return {
-
                 "score":
                     0,
 
@@ -784,7 +740,6 @@ class EngagementEngine:
         ]
 
         reasons = []
-
         score = 0
 
         if len(
@@ -858,19 +813,15 @@ class EngagementEngine:
         )
 
         if score >= 60:
-
             level = "HIGH"
 
         elif score >= 30:
-
             level = "MEDIUM"
 
         else:
-
             level = "LOW"
 
         return {
-
             "score":
                 score,
 
@@ -965,4 +916,5 @@ class EngagementEngine:
 
         score += min(
             len(curiosity) * 2,
-           
+            18
+)
