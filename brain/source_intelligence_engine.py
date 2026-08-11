@@ -67,3 +67,89 @@ class SourceIntelligenceEngine:
         for cluster in clusters:
             cs=cluster["sources"];domains=self._unique([s.get("domain") for s in cs if s.get("domain")]);result.append({"cluster_id":cluster["cluster_id"],"source_count":len(cs),"independent_domains":len(domains),"domains":domains,"primary_sources":[s.get("name") for s in cs if s.get("primary")],"likely_repetition":len(domains)<=1 and len(cs)>1})
         return result
+    def _independence_analysis(self,sources,clusters):
+        domains=self._unique([s.get("domain") for s in sources if s.get("domain")]);explicit=sum(1 for s in sources if s.get("independent"));primary=sum(1 for s in sources if s.get("primary"));repeated=sum(1 for c in clusters if c.get("likely_repetition"));score=min(len(domains)*10,40)+min(explicit*10,30)+min(primary*15,30)-min(repeated*15,30);score=max(0,min(score,100))
+        return {"unique_domains":len(domains),"domains":domains,"explicit_independent_sources":explicit,"primary_sources":primary,"repeated_clusters":repeated,"independence_score":score,"classification":self._independence_classification(score)}
+
+    def _build_source_chain(self,sources):
+        primary=[];secondary=[];social=[];unknown=[]
+        for s in sources:
+            if s.get("primary") or s.get("official"):primary.append(s.get("name"))
+            elif self._is_social_source(s):social.append(s.get("name"))
+            elif s.get("type") in {"UNKNOWN","USER_GENERATED"}:unknown.append(s.get("name"))
+            else:secondary.append(s.get("name"))
+        return {"original_source":primary,"primary_reports":primary,"secondary_reports":secondary,"social_amplification":social,"unknown_sources":unknown,"chain_depth":len(primary)+len(secondary)+len(social)}
+
+    def _detect_conflicts(self,sources):
+        conflicts=[]
+        for i in range(len(sources)):
+            for j in range(i+1,len(sources)):
+                a=sources[i];b=sources[j];ta=str(a.get("title","")).strip().lower();tb=str(b.get("title","")).strip().lower()
+                if not ta or not tb:continue
+                if self._text_similarity(ta,tb)<.25:conflicts.append({"type":"LOW_TITLE_ALIGNMENT","source_a":a.get("name"),"source_b":b.get("name"),"severity":"LOW","message":"Sources appear to describe the story differently."})
+        return conflicts
+
+    def _overall_source_quality(self,sources,independence,conflicts):
+        if not sources:return {"score":0,"classification":"NO_SOURCES"}
+        avg=sum(s.get("quality_score",0) for s in sources)/len(sources);ind=int(independence.get("independence_score",0));pen=min(len(conflicts)*5,25);final=int(max(0,min(avg*.70+ind*.30-pen,100)))
+        return {"score":final,"average_source_quality":int(avg),"independence_score":ind,"conflict_penalty":pen,"classification":self._classification(final)}
+
+    def _recommendation(self,overall,conflicts,independence):
+        score=int(overall.get("score",0));ind=int(independence.get("independence_score",0))
+        if score>=80 and ind>=50:decision="STRONG_SOURCE_BASE"
+        elif score>=65:decision="ACCEPT_WITH_CORROBORATION"
+        elif score>=45:decision="NEEDS_MORE_SOURCES"
+        else:decision="WEAK_SOURCE_BASE"
+        note="Source differences detected; fact verification should resolve material disagreements before publication." if conflicts else "No major source-alignment conflicts were detected."
+        return {"decision":decision,"score":score,"independence_score":ind,"conflict_count":len(conflicts),"note":note}
+
+    def _classification(self,score):
+        score=int(max(0,min(score,100)))
+        if score>=85:return "EXCELLENT"
+        if score>=70:return "STRONG"
+        if score>=55:return "MODERATE"
+        if score>=40:return "WEAK"
+        return "VERY_WEAK"
+
+    def _independence_classification(self,score):
+        score=int(max(0,min(score,100)))
+        if score>=80:return "HIGHLY_INDEPENDENT"
+        if score>=60:return "INDEPENDENT"
+        if score>=40:return "MIXED"
+        if score>=20:return "LOW_INDEPENDENCE"
+        return "HIGH_REPETITION_RISK"
+
+    def _domain(self,url):
+        if not url:return ""
+        try:
+            domain=(urlparse(str(url)).netloc or str(url).split("/")[0]).lower().strip()
+            return domain[4:] if domain.startswith("www.") else domain
+        except Exception:return ""
+
+    def _is_social_source(self,source):
+        typ=str(source.get("type","")).upper();domain=str(source.get("domain","")).lower().strip();domain=domain[4:] if domain.startswith("www.") else domain
+        return typ=="SOCIAL" or domain in self.social_domains or any(domain.endswith("."+d) for d in self.social_domains)
+
+    def _normalize_text(self,text):
+        text=str(text or "").lower();text=re.sub(r"https?://\S+"," ",text);text=re.sub(r"[^a-z0-9\s]"," ",text);return re.sub(r"\s+"," ",text).strip()
+
+    def _tokens(self,text):
+        return re.findall(r"\b[a-z0-9]{3,}\b",self._normalize_text(text))
+
+    def _text_similarity(self,first,second):
+        a=self._normalize_text(first);b=self._normalize_text(second)
+        if not a or not b:return 0.0
+        if a==b:return 1.0
+        seq=SequenceMatcher(None,a,b).ratio();ta=set(self._tokens(a));tb=set(self._tokens(b));over=(len(ta&tb)/len(ta|tb)) if ta and tb else 0.0
+        return seq*.6+over*.4
+
+    def _unique(self,values):
+        result=[];seen=set()
+        for value in values:
+            if value is None:continue
+            key=str(value).strip()
+            if not key:continue
+            norm=key.lower()
+            if norm in seen:continue
+            seen.add(norm);result.append(value)
+        return result
