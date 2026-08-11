@@ -310,3 +310,385 @@ class AngleEngine:
                 "Focus on the verified business or "
                 "economic consequences."
     )
+        elif angle_type == "POLITICAL_IMPACT":
+            score = (
+                signals["political"] * 0.50 +
+                signals["impact"] * 0.30 +
+                signals["evidence_strength"] * 0.20
+            )
+            reason = (
+                "Political institutions, policies or "
+                "official decisions are central to the story."
+            )
+            description = (
+                "Explain the political significance while "
+                "keeping factual reporting separate from opinion."
+            )
+
+        elif angle_type == "TECHNOLOGY_IMPACT":
+            score = (
+                signals["technology"] * 0.50 +
+                signals["impact"] * 0.30 +
+                signals["reader_need"] * 0.20
+            )
+            reason = (
+                "Technology is central and the development "
+                "has practical implications."
+            )
+            description = (
+                "Explain what the technology actually "
+                "changes for users or organizations."
+            )
+
+        elif angle_type == "PUBLIC_REACTION":
+            score = (
+                signals["reaction"] * 0.55 +
+                signals["source_diversity"] * 0.25 +
+                signals["evidence_strength"] * 0.20
+            )
+            reason = (
+                "There is enough verified reaction from "
+                "relevant people or institutions."
+            )
+            description = (
+                "Report meaningful reactions and distinguish "
+                "verified statements from online speculation."
+            )
+
+        elif angle_type == "CONTROVERSY":
+            score = (
+                signals["controversy"] * 0.45 +
+                signals["source_diversity"] * 0.30 +
+                signals["evidence_strength"] * 0.25
+            )
+            reason = (
+                "There are clearly documented competing "
+                "claims, disputes or disagreements."
+            )
+            description = (
+                "Present competing positions fairly and "
+                "identify what is actually established."
+            )
+
+        elif angle_type == "UNANSWERED_QUESTIONS":
+            score = (
+                signals["uncertainty"] * 0.50 +
+                signals["reader_need"] * 0.30 +
+                signals["complexity"] * 0.20
+            )
+            reason = (
+                "Important information remains unresolved."
+            )
+            description = (
+                "Identify important unanswered questions "
+                "without turning uncertainty into speculation."
+            )
+
+        elif angle_type == "DATA_ANGLE":
+            score = (
+                signals["data"] * 0.60 +
+                signals["comparison"] * 0.25 +
+                signals["specificity"] * 0.15
+            )
+            reason = (
+                "Numbers, measurable changes or datasets "
+                "could materially improve the story."
+            )
+            description = (
+                "Lead with verified numbers and explain "
+                "what they mean."
+            )
+
+        elif angle_type == "COMPARISON":
+            score = (
+                signals["comparison"] * 0.55 +
+                signals["context"] * 0.25 +
+                signals["reader_need"] * 0.20
+            )
+            reason = (
+                "The story can be better understood "
+                "through a factual comparison."
+            )
+            description = (
+                "Compare the current development with "
+                "a relevant previous situation."
+            )
+
+        else:
+            return {}
+
+        score = max(
+            0.0,
+            min(
+                1.0,
+                score / 100.0
+            )
+        )
+
+        if score < 0.20:
+            return {}
+
+        numeric_score = round(
+            score * 100,
+            2
+        )
+
+        confidence = self._confidence(
+            numeric_score,
+            signals
+        )
+
+        return {
+            "angle_type": angle_type,
+            "angle_score": numeric_score,
+            "confidence": confidence,
+            "reason": reason,
+            "angle_description": description,
+            "headline_direction": (
+                self._headline_direction(
+                    angle_type,
+                    story
+                )
+            ),
+            "supporting_signals": signals,
+            "safety_note": (
+                "Use only claims supported by available "
+                "evidence and clearly distinguish confirmed "
+                "facts from uncertainty."
+            ),
+            "publication_safe": (
+                numeric_score >= 60
+                and confidence != "LOW"
+            )
+        }
+
+    # =====================================================
+    # SIGNALS
+    # =====================================================
+
+    def _signals(
+        self,
+        story: Dict[str, Any],
+        related_stories: List[Dict[str, Any]],
+        evidence: List[Dict[str, Any]],
+        trend_data: Dict[str, Any],
+        text: str
+    ) -> Dict[str, int]:
+
+        lowered = str(text or "").lower()
+        words = set(
+            re.findall(
+                r"\b[a-zA-Z]{3,}\b",
+                lowered
+            )
+        )
+
+        development_hits = sum(
+            1
+            for word in self.development_words
+            if word in words
+        )
+        newness = min(
+            100,
+            development_hits * 20
+        )
+
+        recency = 50
+
+        if story.get("published_at"):
+            recency = 80
+
+        if story.get("updated_at"):
+            recency = 90
+
+        if any(
+            marker in lowered
+            for marker in (
+                "today",
+                "just now",
+                "breaking",
+                "latest",
+                "minutes ago",
+                "hours ago"
+            )
+        ):
+            recency = 100
+
+        impact_hits = sum(
+            1
+            for word in self.impact_words
+            if word in words
+        )
+        impact = min(
+            100,
+            impact_hits * 12
+        )
+
+        if story.get("impact"):
+            impact = max(
+                impact,
+                self._numeric_signal(
+                    story.get("impact")
+                )
+            )
+
+        evidence_strength = (
+            20
+            if not evidence
+            else min(
+                100,
+                len(evidence) * 20
+            )
+        )
+
+        specificity = 40
+
+        if story.get("entities"):
+            specificity += 20
+
+        if story.get("location"):
+            specificity += 10
+
+        if story.get("date"):
+            specificity += 10
+
+        if re.search(
+            r"\b\d+(?:\.\d+)?%?\b",
+            lowered
+        ):
+            specificity += 10
+
+        specificity = min(
+            specificity,
+            100
+        )
+
+        comparison = 20
+
+        if related_stories:
+            comparison += min(
+                50,
+                len(related_stories) * 10
+            )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "compared with",
+                "compared to",
+                "previously",
+                "last year",
+                "last month",
+                "earlier",
+                "unlike",
+                "versus",
+                "vs"
+            )
+        ):
+            comparison += 30
+
+        comparison = min(
+            comparison,
+            100
+        )
+
+        future_hits = sum(
+            1
+            for marker in (
+                "next",
+                "will",
+                "expected",
+                "plans",
+                "planned",
+                "deadline",
+                "coming",
+                "future",
+                "pending",
+                "scheduled",
+                "set to"
+            )
+            if marker in lowered
+        )
+
+        future_signal = min(
+            100,
+            20 + future_hits * 15
+        )
+
+        human_hits = sum(
+            1
+            for marker in (
+                "people",
+                "families",
+                "workers",
+                "students",
+                "children",
+                "patients",
+                "residents",
+                "customers",
+                "consumers",
+                "victims",
+                "community",
+                "public"
+            )
+            if marker in lowered
+        )
+
+        human_relevance = min(
+            100,
+            human_hits * 15
+        )
+
+        business_hits = sum(
+            1
+            for marker in (
+                "business",
+                "company",
+                "companies",
+                "market",
+                "stock",
+                "shares",
+                "profit",
+                "revenue",
+                "investment",
+                "investors",
+                "economy",
+                "economic",
+                "trade",
+                "jobs",
+                "consumer",
+                "customers"
+            )
+            if marker in lowered
+        )
+
+        business = min(
+            100,
+            business_hits * 15
+        )
+
+        political_hits = sum(
+            1
+            for marker in (
+                "government",
+                "president",
+                "minister",
+                "senate",
+                "senator",
+                "congress",
+                "parliament",
+                "election",
+                "vote",
+                "policy",
+                "political",
+                "party",
+                "law",
+                "legislation"
+            )
+            if marker in lowered
+        )
+
+        political = min(
+            100,
+            political_hits * 12
+        )
