@@ -82,3 +82,77 @@ class MisinformationEngine:
         event_date=story.get("event_date")
         if event_date and dates:warnings.append("Event date should be compared with publication dates before publication.")
         return {"source_dates":dates,"event_date":event_date,"warnings":warnings,"status":"REVIEW_REQUIRED" if warnings else "NO_MAJOR_SIGNAL"}
+    def _analyze_duplication(self,sources):
+        fingerprints={};groups=[]
+        for s in sources:
+            if not isinstance(s,dict):continue
+            content=self._normalize_text(str(s.get("content",s.get("text",s.get("description","")))))
+            if not content:continue
+            fp=hashlib.sha256(content.encode()).hexdigest()[:16];fingerprints.setdefault(fp,[]).append(s.get("id",s.get("source_id")))
+        for fp,ids in fingerprints.items():
+            if len(ids)>1:groups.append({"fingerprint":fp,"source_ids":ids,"count":len(ids),"likely_recycled":True})
+        return {"unique_fingerprints":len(fingerprints),"duplicate_groups":groups,"duplicate_group_count":len(groups),"risk":"HIGH" if groups else "LOW"}
+
+    def _overall_assessment(self,claims,sources,temporal,dup):
+        claim_risk=sum(c.get("risk_score",0) for c in claims)/len(claims) if claims else 0;source_score=sources.get("score",0);temporal_penalty=min(len(temporal.get("warnings",[]))*8,20);dup_penalty=min(dup.get("duplicate_group_count",0)*10,30);risk=min(100,int(claim_risk*.60+(100-source_score)*.40+temporal_penalty+dup_penalty));level=self._risk_level(risk)
+        return {"risk_score":risk,"risk_level":level,"claim_risk_average":round(claim_risk,2),"source_quality_score":source_score,"temporal_penalty":temporal_penalty,"duplication_penalty":dup_penalty,"high_risk":level in {"HIGH","CRITICAL"}}
+
+    def _editorial_action(self,overall):
+        level=overall.get("risk_level","LOW")
+        if level=="CRITICAL":return {"decision":"BLOCK_PUBLICATION","reason":"Critical misinformation risk detected."}
+        if level=="HIGH":return {"decision":"HOLD_FOR_REVIEW","reason":"High misinformation risk requires verification."}
+        if level=="MEDIUM":return {"decision":"VERIFY_BEFORE_PUBLICATION","reason":"Additional verification is recommended."}
+        return {"decision":"NORMAL_REVIEW","reason":"No major misinformation risk signal detected."}
+
+    def _risk_level(self,score):
+        if score>=80:return "CRITICAL"
+        if score>=60:return "HIGH"
+        if score>=35:return "MEDIUM"
+        if score>=15:return "LOW"
+        return "MINIMAL"
+
+    def _risk_inverse_level(self,score):
+        if score>=80:return "STRONG"
+        if score>=60:return "GOOD"
+        if score>=40:return "MODERATE"
+        return "WEAK"
+
+    def _claim_recommendation(self,risk):
+        if risk>=80:return "BLOCK_UNTIL_VERIFIED"
+        if risk>=60:return "HUMAN_REVIEW"
+        if risk>=35:return "VERIFY_AND_ATTRIBUTE"
+        return "NORMAL_REVIEW"
+
+    def _is_social_source(self,source):
+        typ=str(source.get("type",source.get("source_type",""))).lower();domain=str(source.get("domain","")).lower().strip()
+        if domain.startswith("www."):domain=domain[4:]
+        if typ=="social":return True
+        if not domain and source.get("url"):
+            try:domain=urlparse(str(source["url"])).netloc.lower().removeprefix("www.")
+            except Exception:domain=""
+        return domain in self.social_domains or any(domain.endswith("."+d) for d in self.social_domains)
+
+    def _normalize_text(self,text):
+        text=str(text or "").lower();text=re.sub(r"https?://\S+"," ",text);text=re.sub(r"[^a-z0-9\s]"," ",text);return re.sub(r"\s+"," ",text).strip()
+
+    def _unique(self,values):
+        result=[];seen=set()
+        for v in values:
+            v=str(v or "").strip();k=v.lower()
+            if v and k not in seen:seen.add(k);result.append(v)
+        return result
+
+    def _number(self,value,default=0):
+        try:return float(value)
+        except (TypeError,ValueError):return default
+
+    def status(self):
+        return {"engine":self.name,"version":self.version,"status":"READY"}
+
+misinformation_engine=MisinformationEngine()
+
+def analyze_misinformation(claims,sources=None,story=None):
+    return misinformation_engine.analyze(claims,sources,story)
+
+def analyze(claims,sources=None,story=None):
+    return misinformation_engine.analyze(claims,sources,story)
