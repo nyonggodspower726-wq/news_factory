@@ -70,8 +70,10 @@ class BrainPipeline:
         """
         Return the current status of the central brain.
 
-        main.py expects the "loaded_brains" field, so it is
-        included here for compatibility.
+        Compatible with main.py fields:
+        - total_brains
+        - loaded_brains
+        - brains
         """
 
         loaded_brains = [
@@ -92,6 +94,11 @@ class BrainPipeline:
             "editor"
         ]
 
+        brains = {
+            brain_name: True
+            for brain_name in loaded_brains
+        }
+
         return {
             "status": "READY",
             "engine": "BrainPipeline",
@@ -99,24 +106,8 @@ class BrainPipeline:
             "initialized": True,
             "total_brains": len(loaded_brains),
             "loaded_brains": loaded_brains,
-
-            "engines": {
-                "story_analyzer": True,
-                "source_intelligence": True,
-                "source_graph": True,
-                "claim_engine": True,
-                "corroboration": True,
-                "fact_checker": True,
-                "story_synthesis": True,
-                "significance": True,
-                "angle_finder": True,
-                "reader_psychology": True,
-                "engagement": True,
-                "narrative": True,
-                "journalist": True,
-                "headline": True,
-                "editor": True
-            }
+            "brains": brains,
+            "engines": brains
         }
 
     # =====================================================
@@ -165,10 +156,7 @@ class BrainPipeline:
 
             package["story_analysis"] = story_analysis
 
-            if isinstance(
-                story_analysis,
-                dict
-            ):
+            if isinstance(story_analysis, dict):
 
                 package["story"].update(
                     story_analysis
@@ -200,9 +188,9 @@ class BrainPipeline:
                 )
             )
 
-            package[
-                "source_intelligence"
-            ] = source_intelligence
+            package["source_intelligence"] = (
+                source_intelligence
+            )
 
         except Exception as error:
 
@@ -211,9 +199,7 @@ class BrainPipeline:
                 error
             )
 
-            package[
-                "source_intelligence"
-            ] = {
+            package["source_intelligence"] = {
                 "status": "ERROR",
                 "error": str(error)
             }
@@ -230,18 +216,14 @@ class BrainPipeline:
                 self.source_graph.build_graph(
                     sources=sources,
                     claims=package["claims"],
-                    entities=package[
-                        "story"
-                    ].get(
+                    entities=package["story"].get(
                         "entities",
                         []
                     )
                 )
             )
 
-            package[
-                "source_graph"
-            ] = source_graph
+            package["source_graph"] = source_graph
 
         except Exception as error:
 
@@ -250,9 +232,7 @@ class BrainPipeline:
                 error
             )
 
-            package[
-                "source_graph"
-            ] = {
+            package["source_graph"] = {
                 "status": "ERROR",
                 "error": str(error)
             }
@@ -271,18 +251,11 @@ class BrainPipeline:
                 )
             )
 
-            package[
-                "claim_analysis"
-            ] = claim_result
+            package["claim_analysis"] = claim_result
 
-            if isinstance(
-                claim_result,
-                dict
-            ):
+            if isinstance(claim_result, dict):
 
-                package[
-                    "claims"
-                ] = claim_result.get(
+                package["claims"] = claim_result.get(
                     "claims",
                     []
                 )
@@ -294,9 +267,7 @@ class BrainPipeline:
                 error
             )
 
-            package[
-                "claim_analysis"
-            ] = {
+            package["claim_analysis"] = {
                 "status": "ERROR",
                 "error": str(error)
             }
@@ -312,15 +283,11 @@ class BrainPipeline:
             corroboration = (
                 self.corroboration.analyze(
                     sources=sources,
-                    claims=package[
-                        "claims"
-                    ]
+                    claims=package["claims"]
                 )
             )
 
-            package[
-                "corroboration"
-            ] = corroboration
+            package["corroboration"] = corroboration
 
         except Exception as error:
 
@@ -329,12 +296,11 @@ class BrainPipeline:
                 error
             )
 
-            package[
-                "corroboration"
-            ] = {
+            package["corroboration"] = {
                 "status": "ERROR",
                 "error": str(error)
             }
+
         # =================================================
         # 6. FACT CHECKING
         # =================================================
@@ -350,14 +316,9 @@ class BrainPipeline:
                 )
             )
 
-            package[
-                "verification"
-            ] = verification
+            package["verification"] = verification
 
-            if isinstance(
-                verification,
-                dict
-            ):
+            if isinstance(verification, dict):
 
                 verified_claims = (
                     verification.get(
@@ -368,9 +329,7 @@ class BrainPipeline:
 
                 if verified_claims:
 
-                    package[
-                        "claims"
-                    ] = verified_claims
+                    package["claims"] = verified_claims
 
         except Exception as error:
 
@@ -379,438 +338,9 @@ class BrainPipeline:
                 error
             )
 
-            package[
-                "verification"
-            ] = {
+            package["verification"] = {
                 "publication_status":
                     "REQUIRES_EDITORIAL_REVIEW",
                 "error": str(error),
                 "claims": []
-            }
-
-        # =================================================
-        # 7. STORY SYNTHESIS
-        # =================================================
-
-        logger.info("7/15 Story synthesis")
-
-        try:
-
-            synthesis = (
-                self.story_synthesis.synthesize(
-                    sources=sources,
-                    evidence=package.get(
-                        "claim_analysis",
-                        {}
-                    ),
-                    metadata={
-                        "topic": topic,
-                        "story": package[
-                            "story"
-                        ],
-                        "verification":
-                            package[
-                                "verification"
-                            ],
-                        "corroboration":
-                            package.get(
-                                "corroboration",
-                                {}
-                            )
-                    }
-                )
-            )
-
-            package[
-                "synthesis"
-            ] = synthesis
-
-            if isinstance(
-                synthesis,
-                dict
-            ):
-
-                package[
-                    "story_model"
-                ] = synthesis
-
-        except Exception as error:
-
-            logger.exception(
-                "Story synthesis failed: %s",
-                error
-            )
-
-            package[
-                "synthesis"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-        # =================================================
-        # 8. SIGNIFICANCE
-        # =================================================
-
-        logger.info("8/15 Significance")
-
-        try:
-
-            significance = (
-                self.significance.evaluate(
-                    package["story"]
-                )
-            )
-
-            package[
-                "significance"
-            ] = significance
-
-        except Exception as error:
-
-            logger.exception(
-                "Significance failed: %s",
-                error
-            )
-
-            package[
-                "significance"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-        # =================================================
-        # 9. EDITORIAL ANGLE
-        # =================================================
-
-        logger.info("9/15 Editorial angle")
-
-        try:
-
-            angles = (
-                self.angle_finder.find_angles(
-                    package["story"],
-                    package[
-                        "significance"
-                    ]
-                )
-            )
-
-            package[
-                "angles"
-            ] = angles
-
-        except Exception as error:
-
-            logger.exception(
-                "Angle finder failed: %s",
-                error
-            )
-
-            package[
-                "angles"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-        # =================================================
-        # 10. READER PSYCHOLOGY
-        # =================================================
-
-        logger.info("10/15 Reader psychology")
-
-        try:
-
-            psychology = (
-                self.reader_psychology.analyze(
-                    story=package[
-                        "story"
-                    ],
-                    article=package.get(
-                        "article_plan"
-                    ),
-                    angle=package.get(
-                        "angles"
-                    )
-                )
-            )
-
-            package[
-                "psychology"
-            ] = psychology
-
-        except Exception as error:
-
-            logger.exception(
-                "Reader psychology failed: %s",
-                error
-            )
-
-            package[
-                "psychology"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-        # =================================================
-        # 11. NARRATIVE
-        # =================================================
-
-        logger.info("11/15 Narrative")
-
-        try:
-
-            narrative = (
-                self.narrative.build_blueprint(
-                    story=package[
-                        "story"
-                    ],
-                    psychology=package[
-                        "psychology"
-                    ],
-                    audience=package.get(
-                        "reader_intelligence",
-                        {}
-                    )
-                )
-            )
-
-            package[
-                "narrative"
-            ] = narrative
-
-        except Exception as error:
-
-            logger.exception(
-                "Narrative failed: %s",
-                error
-            )
-
-            package[
-                "narrative"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-        # =================================================
-        # 12. JOURNALIST
-        # =================================================
-
-        logger.info("12/15 Journalist")
-
-        try:
-
-            article_plan = (
-                self.journalist.create_article_plan(
-                    package
-                )
-            )
-
-            package[
-                "article_plan"
-            ] = article_plan
-
-        except Exception as error:
-
-            logger.exception(
-                "Journalist failed: %s",
-                error
-            )
-
-            package[
-                "article_plan"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-        # =================================================
-        # 13. ENGAGEMENT
-        # =================================================
-
-        logger.info("13/15 Engagement")
-
-        try:
-
-            engagement = (
-                self.engagement.analyze(
-                    package["story"]
-                )
-            )
-
-            package[
-                "engagement"
-            ] = engagement
-
-        except Exception as error:
-
-            logger.exception(
-                "Engagement failed: %s",
-                error
-            )
-
-            package[
-                "engagement"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-        # =================================================
-        # 14. HEADLINE
-        # =================================================
-
-        logger.info("14/15 Headline")
-
-        try:
-
-            headline_result = (
-                self.headline.analyze(
-                    package["story"]
-                )
-            )
-
-            package[
-                "headline"
-            ] = headline_result
-
-            if isinstance(
-                headline_result,
-                dict
-            ):
-
-                headline = (
-                    headline_result.get(
-                        "recommended_headline"
-                    )
-                )
-
-                if headline:
-
-                    package[
-                        "story"
-                    ][
-                        "headline"
-                    ] = headline
-
-        except Exception as error:
-
-            logger.exception(
-                "Headline failed: %s",
-                error
-            )
-
-            package[
-                "headline"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-        # =================================================
-        # 15. FINAL EDITOR
-        # =================================================
-
-        logger.info("15/15 Final editorial gate")
-
-        try:
-
-            editorial = (
-                self.editor.review(
-                    article_plan=package[
-                        "article_plan"
-                    ],
-                    psychology=package[
-                        "psychology"
-                    ],
-                    verification=package[
-                        "verification"
-                    ],
-                    cluster=package.get(
-                        "cluster",
-                        {}
-                    )
-                )
-            )
-
-            package[
-                "editorial"
-            ] = editorial
-
-        except Exception as error:
-
-            logger.exception(
-                "Editor failed: %s",
-                error
-            )
-
-            package[
-                "editorial"
-            ] = {
-                "decision":
-                    "NEEDS_REVISION",
-                "publication_gate":
-                    False,
-                "error": str(error)
-            }
-
-        # =================================================
-        # FINAL RESULT
-        # =================================================
-
-        editorial = package.get(
-            "editorial",
-            {}
-        )
-
-        decision = editorial.get(
-            "decision",
-            "NEEDS_REVISION"
-        )
-
-        package[
-            "pipeline_status"
-        ] = decision
-
-        package[
-            "publication_ready"
-        ] = (
-            decision == "APPROVED"
-        )
-
-        logger.info("=" * 60)
-
-        logger.info(
-            "BRAIN PIPELINE COMPLETE"
-        )
-
-        logger.info(
-            "Decision: %s",
-            decision
-        )
-
-        logger.info("=" * 60)
-
-        return package
-
-
-# =========================================================
-# HELPER
-# =========================================================
-
-def run_brain_pipeline(
-    sources: List[Dict[str, Any]],
-    story: Dict[str, Any] = None,
-    topic: str = ""
-) -> Dict[str, Any]:
-
-    pipeline = BrainPipeline()
-
-    return pipeline.run(
-        sources=sources,
-        story=story,
-        topic=topic
-        )
+    }
