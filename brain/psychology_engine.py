@@ -1,4 +1,6 @@
 """AI NEWS FACTORY - READER PSYCHOLOGY & ENGAGEMENT ENGINE"""
+import re
+from typing import Any,Dict,List
 from typing import Any,Dict,List
 
 class PsychologyEngine:
