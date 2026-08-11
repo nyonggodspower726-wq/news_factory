@@ -935,3 +935,203 @@ class EngagementEngine:
         ) == "DIRECT_NEWS_LEAD":
 
             score += 10
+        score += min(
+            len(curiosity) * 2,
+            14
+        )
+
+        score += min(
+            relevance.get(
+                "signal_count",
+                0
+            ) * 3,
+            12
+        )
+
+        score -= min(
+            fatigue.get(
+                "score",
+                0
+            ) * 0.20,
+            20
+        )
+
+        return int(
+            max(
+                0,
+                min(
+                    score,
+                    100
+                )
+            )
+        )
+
+    # =====================================================
+    # READER VALUE
+    # =====================================================
+
+    def _reader_value(
+        self,
+        signal_count: int
+    ) -> str:
+
+        if signal_count >= 4:
+
+            return "VERY_HIGH"
+
+        if signal_count >= 3:
+
+            return "HIGH"
+
+        if signal_count >= 2:
+
+            return "MODERATE"
+
+        if signal_count == 1:
+
+            return "LOW"
+
+        return "LIMITED"
+
+    # =====================================================
+    # EDITORIAL RULE
+    # =====================================================
+
+    def _editorial_rule(
+        self,
+        score: int
+    ) -> str:
+
+        if score >= 80:
+
+            return (
+                "Strong reading structure. "
+                "Maintain factual clarity while "
+                "continuing to add useful information."
+            )
+
+        if score >= 60:
+
+            return (
+                "Good reading structure. "
+                "Strengthen relevance, context and "
+                "section-to-section information value."
+            )
+
+        if score >= 40:
+
+            return (
+                "Moderate engagement potential. "
+                "Improve the opening, practical relevance "
+                "and information density."
+            )
+
+        return (
+            "Weak engagement structure. "
+            "Lead with confirmed facts and make each "
+            "section provide clear reader value."
+        )
+
+    # =====================================================
+    # UNIQUE VALUES
+    # =====================================================
+
+    def _unique(
+        self,
+        items: List[Any]
+    ) -> List[Any]:
+
+        seen = set()
+        result = []
+
+        for item in items:
+
+            key = str(
+                item
+            ).strip().lower()
+
+            if not key:
+                continue
+
+            if key in seen:
+                continue
+
+            seen.add(
+                key
+            )
+
+            result.append(
+                item
+            )
+
+        return result
+
+
+# =========================================================
+# SAFE MODULE TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    engine = EngagementEngine()
+
+    test_story = {
+
+        "event":
+            "A new policy was announced.",
+
+        "subject":
+            "Government",
+
+        "why_it_matters":
+            "The policy may affect consumers.",
+
+        "affected_groups":
+            [
+                "consumers",
+                "businesses"
+            ],
+
+        "timeline":
+            True,
+
+        "consequences":
+            "The policy could change operating costs.",
+
+        "what_happens_next":
+            "Officials are expected to provide further details.",
+
+        "target_word_count":
+            800,
+
+        "body":
+            (
+                "Officials announced the new policy today.\n\n"
+                "The announcement could affect consumers "
+                "and businesses.\n\n"
+                "More details are expected as implementation "
+                "plans are released."
+            )
+    }
+
+    result = engine.analyze(
+        test_story
+    )
+
+    print(
+        "Engagement Engine Test"
+    )
+
+    print(
+        "Status:",
+        result.get(
+            "status"
+        )
+    )
+
+    print(
+        "Score:",
+        result.get(
+            "engagement_score"
+        )
+    )
