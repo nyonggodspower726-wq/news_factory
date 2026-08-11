@@ -156,3 +156,30 @@ def analyze_misinformation(claims,sources=None,story=None):
 
 def analyze(claims,sources=None,story=None):
     return misinformation_engine.analyze(claims,sources,story)
+if __name__=="__main__":
+    test_claims=[
+        {
+            "id":"claim_1",
+            "text":"Officials announced a new development."
+        }
+    ]
+
+    test_sources=[
+        {
+            "id":"source_1",
+            "name":"Example News",
+            "domain":"example.com",
+            "title":"Officials announced a new development",
+            "text":"Officials announced a new development.",
+            "type":"ESTABLISHED_NEWS",
+            "quality_score":80,
+            "published_at":"2026-08-11"
+        }
+    ]
+
+    print(
+        analyze_misinformation(
+            test_claims,
+            test_sources
+        )
+    )
