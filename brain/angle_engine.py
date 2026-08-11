@@ -692,3 +692,395 @@ class AngleEngine:
             100,
             political_hits * 12
         )
+        technology_hits = sum(
+            1
+            for marker in (
+                "technology",
+                "software",
+                "artificial intelligence",
+                "ai",
+                "algorithm",
+                "computer",
+                "cyber",
+                "internet",
+                "robot",
+                "chip",
+                "app",
+                "platform",
+                "digital"
+            )
+            if marker in lowered
+        )
+
+        technology = min(
+            100,
+            technology_hits * 15
+        )
+
+        reaction_hits = sum(
+            1
+            for marker in (
+                "reaction",
+                "reacted",
+                "responded",
+                "response",
+                "criticism",
+                "critics",
+                "supporters",
+                "statement",
+                "comment",
+                "comments",
+                "public",
+                "social media"
+            )
+            if marker in lowered
+        )
+
+        reaction = min(
+            100,
+            reaction_hits * 15
+        )
+
+        controversy_hits = sum(
+            1
+            for marker in (
+                "controversy",
+                "controversial",
+                "dispute",
+                "disputed",
+                "conflict",
+                "criticism",
+                "accused",
+                "allegation",
+                "alleged",
+                "opposition",
+                "denied",
+                "denies"
+            )
+            if marker in lowered
+        )
+
+        controversy = min(
+            100,
+            controversy_hits * 15
+        )
+
+        uncertainty_hits = sum(
+            1
+            for marker in self.uncertainty_words
+            if marker in lowered
+        )
+
+        uncertainty = min(
+            100,
+            uncertainty_hits * 15
+        )
+
+        number_matches = re.findall(
+            r"\b\d+(?:\.\d+)?%?\b",
+            lowered
+        )
+
+        data = min(
+            100,
+            len(number_matches) * 15
+        )
+
+        if trend_data:
+            data = max(
+                data,
+                60
+            )
+
+        timeline_hits = sum(
+            1
+            for marker in (
+                "before",
+                "after",
+                "earlier",
+                "previously",
+                "since",
+                "then",
+                "later",
+                "first",
+                "next",
+                "timeline",
+                "history",
+                "last year",
+                "last month"
+            )
+            if marker in lowered
+        )
+
+        timeline = min(
+            100,
+            20 + timeline_hits * 10
+        )
+
+        if related_stories:
+            timeline = min(
+                100,
+                timeline + min(
+                    30,
+                    len(related_stories) * 5
+                )
+            )
+
+        context = 30
+
+        if related_stories:
+            context += min(
+                40,
+                len(related_stories) * 8
+            )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "background",
+                "history",
+                "previously",
+                "context",
+                "according to"
+            )
+        ):
+            context += 30
+
+        context = min(
+            context,
+            100
+        )
+
+        sentence_count = max(
+            1,
+            len(
+                self._sentences(text)
+            )
+        )
+
+        complexity = min(
+            100,
+            25 + sentence_count * 5
+        )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "how",
+                "why",
+                "process",
+                "system",
+                "mechanism",
+                "technical",
+                "regulation"
+            )
+        ):
+            complexity += 25
+
+        complexity = min(
+            complexity,
+            100
+        )
+
+        reader_need = max(
+            impact,
+            complexity,
+            context
+        )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "what does this mean",
+                "what it means",
+                "why it matters",
+                "how it works"
+            )
+        ):
+            reader_need = min(
+                100,
+                reader_need + 20
+            )
+
+        clarity = 60
+
+        if story.get("title"):
+            clarity += 10
+
+        if story.get("summary"):
+            clarity += 15
+
+        if story.get("entities"):
+            clarity += 15
+
+        clarity = min(
+            clarity,
+            100
+        )
+
+        domains = set()
+
+        for item in evidence:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+                continue
+
+            domain = (
+                item.get("domain")
+                or item.get("source")
+                or item.get("publisher")
+            )
+
+            if domain:
+                domains.add(
+                    str(domain).lower()
+                )
+
+        source_diversity = min(
+            100,
+            len(domains) * 20
+        )
+
+        if not evidence:
+            source_diversity = 20
+
+        return {
+            "newness": int(newness),
+            "recency": int(recency),
+            "impact": int(impact),
+            "evidence_strength": int(evidence_strength),
+            "specificity": int(specificity),
+            "comparison": int(comparison),
+            "future_signal": int(future_signal),
+            "human_relevance": int(human_relevance),
+            "business": int(business),
+            "political": int(political),
+            "technology": int(technology),
+            "reaction": int(reaction),
+            "controversy": int(controversy),
+            "uncertainty": int(uncertainty),
+            "data": int(data),
+            "timeline": int(timeline),
+            "context": int(context),
+            "complexity": int(complexity),
+            "reader_need": int(reader_need),
+            "clarity": int(clarity),
+            "source_diversity": int(source_diversity)
+        }
+
+    # =====================================================
+    # HELPERS
+    # =====================================================
+
+    def _confidence(
+        self,
+        score: float,
+        signals: Dict[str, int]
+    ) -> str:
+
+        evidence = signals.get(
+            "evidence_strength",
+            0
+        )
+        uncertainty = signals.get(
+            "uncertainty",
+            0
+        )
+
+        if (
+            score >= 80
+            and evidence >= 60
+            and uncertainty < 50
+        ):
+            return "HIGH"
+
+        if (
+            score >= 60
+            and evidence >= 40
+        ):
+            return "MEDIUM"
+
+        return "LOW"
+
+    def _story_text(
+        self,
+        story: Dict[str, Any]
+    ) -> str:
+
+        parts = []
+
+        for key in (
+            "title",
+            "headline",
+            "summary",
+            "description",
+            "content",
+            "body"
+        ):
+            value = story.get(key)
+
+            if value:
+                parts.append(
+                    str(value)
+                )
+
+        return " ".join(parts)
+
+    def _sentences(
+        self,
+        text: str
+    ) -> List[str]:
+
+        return [
+            part.strip()
+            for part in re.split(
+                r"(?<=[.!?])\s+",
+                str(text or "").strip()
+            )
+            if part.strip()
+        ]
+
+    def _numeric_signal(
+        self,
+        value: Any
+    ) -> int:
+
+        if isinstance(
+            value,
+            (int, float)
+        ):
+            return int(
+                max(
+                    0,
+                    min(
+                        value,
+                        100
+                    )
+                )
+            )
+
+        numbers = re.findall(
+            r"\d+(?:\.\d+)?",
+            str(value)
+        )
+
+        if not numbers:
+            return 0
+
+        try:
+            return int(
+                min(
+                    100,
+                    float(
+                        numbers[0]
+                    )
+                )
+            )
+        except (
+            TypeError,
+            ValueError
+        ):
+            return 0
