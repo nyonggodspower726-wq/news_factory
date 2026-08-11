@@ -91,3 +91,72 @@ class EventResolutionEngine:
                 visited.add(current);ids.append(current);stack.extend(adjacency.get(current,set())-visited)
             clusters.append({"cluster_id":f"event_cluster_{len(clusters)+1}","event_ids":ids,"size":len(ids),"cluster_type":"DUPLICATE_OR_DEVELOPING" if len(ids)>1 else "SINGLE_EVENT"})
         return clusters
+    def _find_duplicate_groups(self,clusters):
+        duplicates=[]
+        for cluster in clusters:
+            if cluster.get("size",0)<=1:continue
+            duplicates.append({"cluster_id":cluster.get("cluster_id"),"event_ids":cluster.get("event_ids",[]),"recommendation":"Merge reports into one event record and preserve source-specific updates."})
+        return duplicates
+
+    def _find_evolving_events(self,clusters,relationships):
+        return [{"event_a":r.get("event_a"),"event_b":r.get("event_b"),"confidence":r.get("confidence"),"recommendation":"Treat as potentially related developments and verify chronology before merging."} for r in relationships if r.get("relationship")=="EVOLVING_EVENT"]
+
+    def _build_timeline(self,events,clusters):
+        event_map={e.get("event_id"):e for e in events}
+        timeline=[]
+        for cluster in clusters:
+            items=[event_map[eid] for eid in cluster.get("event_ids",[]) if eid in event_map]
+            items.sort(key=lambda e:str(e.get("published_at","")))
+            for index,event in enumerate(items,1):
+                timeline.append({"cluster_id":cluster.get("cluster_id"),"sequence":index,"event_id":event.get("event_id"),"title":event.get("title",""),"date":event.get("date"),"time":event.get("time"),"published_at":event.get("published_at"),"source_id":event.get("source_id")})
+        return timeline
+
+    def _extract_date(self,event):
+        for key in ("date","event_date","published_at","published","datetime"):
+            value=event.get(key)
+            if value:
+                text=str(value)
+                match=re.search(r"\b\d{4}-\d{2}-\d{2}\b",text)
+                if match:return match.group(0)
+                match=re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",text)
+                if match:return match.group(0)
+        return None
+
+    def _extract_time(self,event):
+        for key in ("time","event_time","datetime","published_at"):
+            value=event.get(key)
+            if value:
+                match=re.search(r"\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?[APap][Mm])?\b",str(value))
+                if match:return match.group(0)
+        return None
+
+    def _normalize_text(self,text):
+        text=str(text or "").lower()
+        text=re.sub(r"https?://\S+"," ",text)
+        text=re.sub(r"[^a-z0-9\s]"," ",text)
+        text=re.sub(r"\s+"," ",text).strip()
+        return " ".join(w for w in text.split() if w not in self.stop_words)
+
+    def _tokens(self,text):
+        return set(self._normalize_text(text).split())
+
+    def _similarity(self,a,b):
+        a=self._normalize_text(a);b=self._normalize_text(b)
+        if not a or not b:return 0.0
+        if a==b:return 1.0
+        return len(self._tokens(a)&self._tokens(b))/max(len(self._tokens(a)|self._tokens(b)),1)
+
+    def _set_similarity(self,a,b):
+        a=set(a or set());b=set(b or set())
+        if not a and not b:return 1.0
+        if not a or not b:return 0.0
+        return len(a&b)/max(len(a|b),1)
+
+    def _text_exact_score(self,a,b):
+        a=self._normalize_text(a);b=self._normalize_text(b)
+        if not a or not b:return 0.0
+        return 1.0 if a==b else self._similarity(a,b)
+
+    def _date_similarity(self,a,b):
+        if not a or not b:return 0.0
+        return 1.0 if str(a)==str(b) else 0.0
