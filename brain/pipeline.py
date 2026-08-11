@@ -981,3 +981,104 @@ class BrainPipeline:
                 "status": "ERROR",
                 "error": str(error)
                     }
+        # =================================================
+        # 15. FINAL EDITOR
+        # =================================================
+
+        logger.info("15/15 Final editorial gate")
+
+        try:
+
+            editorial = (
+                self.editor.review(
+                    article_plan=package[
+                        "article_plan"
+                    ],
+                    psychology=package[
+                        "psychology"
+                    ],
+                    verification=package[
+                        "verification"
+                    ],
+                    cluster=package.get(
+                        "cluster",
+                        {}
+                    )
+                )
+            )
+
+            package["editorial"] = editorial
+
+        except Exception as error:
+
+            logger.exception(
+                "Editor failed: %s",
+                error
+            )
+
+            package["editorial"] = {
+                "decision":
+                    "NEEDS_REVISION",
+
+                "publication_gate":
+                    False,
+
+                "error":
+                    str(error)
+            }
+
+        # =================================================
+        # FINAL RESULT
+        # =================================================
+
+        editorial = package.get(
+            "editorial",
+            {}
+        )
+
+        decision = editorial.get(
+            "decision",
+            "NEEDS_REVISION"
+        )
+
+        package["pipeline_status"] = (
+            decision
+        )
+
+        package["publication_ready"] = (
+            decision == "APPROVED"
+        )
+
+        logger.info("=" * 60)
+
+        logger.info(
+            "BRAIN PIPELINE COMPLETE"
+        )
+
+        logger.info(
+            "Decision: %s",
+            decision
+        )
+
+        logger.info("=" * 60)
+
+        return package
+
+
+# =========================================================
+# HELPER
+# =========================================================
+
+def run_brain_pipeline(
+    sources: List[Dict[str, Any]],
+    story: Dict[str, Any] = None,
+    topic: str = ""
+) -> Dict[str, Any]:
+
+    pipeline = BrainPipeline()
+
+    return pipeline.run(
+        sources=sources,
+        story=story,
+        topic=topic
+    )
