@@ -263,4 +263,251 @@ class SourceIntelligenceEngine:
                         "original_source"
                     ),
 
-                "
+                "reliability":
+                    source.get(
+                        "reliability"
+                    ),
+
+                "freshness_score":
+                    source.get(
+                        "freshness_score"
+                    ),
+            })
+
+        return normalized
+
+    # =====================================================
+    # SOURCE SCORING
+    # =====================================================
+
+    def _score_source(
+        self,
+        source: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        authority = self._authority_score(
+            source
+        )
+
+        transparency = self._transparency_score(
+            source
+        )
+
+        primary_score = (
+            100
+            if source.get("primary")
+            else 0
+        )
+
+        freshness = self._freshness_score(
+            source
+        )
+
+        independence = (
+            100
+            if source.get("independent")
+            else 50
+        )
+
+        duplication_risk = (
+            20
+            if self._is_social_source(source)
+            else 0
+        )
+
+        if not source.get("author"):
+            duplication_risk += 5
+
+        total = (
+            authority * 0.30
+            + transparency * 0.15
+            + primary_score * 0.20
+            + freshness * 0.10
+            + independence * 0.10
+            + (100 - duplication_risk) * 0.15
+        )
+
+        total = int(
+            max(
+                0,
+                min(
+                    total,
+                    100
+                )
+            )
+        )
+
+        return {
+            **source,
+
+            "authority_score":
+                authority,
+
+            "transparency_score":
+                transparency,
+
+            "primary_source_score":
+                primary_score,
+
+            "freshness_score":
+                freshness,
+
+            "independence_score":
+                independence,
+
+            "duplication_risk":
+                duplication_risk,
+
+            "quality_score":
+                total,
+
+            "classification":
+                self._classification(
+                    total
+                ),
+        }
+
+    # =====================================================
+    # AUTHORITY
+    # =====================================================
+
+    def _authority_score(
+        self,
+        source: Dict[str, Any]
+    ) -> int:
+
+        explicit = source.get(
+            "authority"
+        )
+
+        if explicit is not None:
+
+            try:
+                value = float(
+                    explicit
+                )
+
+                if value > 0:
+                    return int(
+                        max(
+                            0,
+                            min(
+                                value,
+                                100
+                            )
+                        )
+                    )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+                pass
+
+        source_type = str(
+            source.get(
+                "type",
+                "UNKNOWN"
+            )
+        ).upper()
+
+        score = self.source_type_weights.get(
+            source_type,
+            25
+        )
+
+        if source.get("official"):
+            score = max(
+                score,
+                90
+            )
+
+        domain = str(
+            source.get(
+                "domain",
+                ""
+            )
+        ).lower()
+
+        if any(
+            keyword in domain
+            for keyword in self.official_keywords
+        ):
+            score += 5
+
+        return min(
+            score,
+            100
+        )
+
+    # =====================================================
+    # TRANSPARENCY
+    # =====================================================
+
+    def _transparency_score(
+        self,
+        source: Dict[str, Any]
+    ) -> int:
+
+        score = 35
+
+        if source.get("name"):
+            score += 15
+
+        if source.get("author"):
+            score += 15
+
+        if source.get("published_at"):
+            score += 15
+
+        if source.get("url"):
+            score += 10
+
+        if source.get("text"):
+            score += 10
+
+        return min(
+            score,
+            100
+        )
+
+    # =====================================================
+    # FRESHNESS
+    # =====================================================
+
+    def _freshness_score(
+        self,
+        source: Dict[str, Any]
+    ) -> int:
+
+        if source.get(
+            "freshness_score"
+        ) is not None:
+
+            try:
+                return int(
+                    max(
+                        0,
+                        min(
+                            int(
+                                source[
+                                    "freshness_score"
+                                ]
+                            ),
+                            100
+                        )
+                    )
+                )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+                pass
+
+        if source.get(
+            "published_at"
+        ):
+            return 80
+
+        return 50
