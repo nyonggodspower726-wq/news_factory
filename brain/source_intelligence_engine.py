@@ -1008,3 +1008,354 @@ class SourceIntelligenceEngine:
                     final_score
                 ),
                         }
+    # =====================================================
+    # RECOMMENDATION
+    # =====================================================
+
+    def _recommendation(
+        self,
+        overall: Dict[str, Any],
+        conflicts: List[Dict[str, Any]],
+        independence: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        score = int(
+            overall.get(
+                "score",
+                0
+            )
+        )
+
+        independence_score = int(
+            independence.get(
+                "independence_score",
+                0
+            )
+        )
+
+        if score >= 80 and independence_score >= 50:
+
+            decision = "STRONG_SOURCE_BASE"
+
+        elif score >= 65:
+
+            decision = "ACCEPT_WITH_CORROBORATION"
+
+        elif score >= 45:
+
+            decision = "NEEDS_MORE_SOURCES"
+
+        else:
+
+            decision = "WEAK_SOURCE_BASE"
+
+        if conflicts:
+            note = (
+                "Source differences detected; "
+                "fact verification should resolve "
+                "material disagreements before publication."
+            )
+        else:
+            note = (
+                "No major source-alignment conflicts "
+                "were detected."
+            )
+
+        return {
+            "decision":
+                decision,
+
+            "score":
+                score,
+
+            "independence_score":
+                independence_score,
+
+            "conflict_count":
+                len(conflicts),
+
+            "note":
+                note,
+        }
+
+    # =====================================================
+    # CLASSIFICATION HELPERS
+    # =====================================================
+
+    def _classification(
+        self,
+        score: int
+    ) -> str:
+
+        score = int(
+            max(
+                0,
+                min(
+                    score,
+                    100
+                )
+            )
+        )
+
+        if score >= 85:
+            return "EXCELLENT"
+
+        if score >= 70:
+            return "STRONG"
+
+        if score >= 55:
+            return "MODERATE"
+
+        if score >= 40:
+            return "WEAK"
+
+        return "VERY_WEAK"
+
+    def _independence_classification(
+        self,
+        score: int
+    ) -> str:
+
+        score = int(
+            max(
+                0,
+                min(
+                    score,
+                    100
+                )
+            )
+        )
+
+        if score >= 80:
+            return "HIGHLY_INDEPENDENT"
+
+        if score >= 60:
+            return "INDEPENDENT"
+
+        if score >= 40:
+            return "MIXED"
+
+        if score >= 20:
+            return "LOW_INDEPENDENCE"
+
+        return "HIGH_REPETITION_RISK"
+
+    # =====================================================
+    # DOMAIN
+    # =====================================================
+
+    def _domain(
+        self,
+        url: str
+    ) -> str:
+
+        if not url:
+            return ""
+
+        try:
+
+            parsed = urlparse(
+                url
+            )
+
+            domain = (
+                parsed.netloc
+                or parsed.path.split("/")[0]
+            )
+
+            domain = domain.lower().strip()
+
+            if domain.startswith(
+                "www."
+            ):
+                domain = domain[4:]
+
+            return domain
+
+        except Exception:
+            return ""
+
+    # =====================================================
+    # SOCIAL SOURCE
+    # =====================================================
+
+    def _is_social_source(
+        self,
+        source: Dict[str, Any]
+    ) -> bool:
+
+        source_type = str(
+            source.get(
+                "type",
+                ""
+            )
+        ).upper()
+
+        if source_type == "SOCIAL":
+            return True
+
+        domain = str(
+            source.get(
+                "domain",
+                ""
+            )
+        ).lower().strip()
+
+        if domain.startswith(
+            "www."
+        ):
+            domain = domain[4:]
+
+        if domain in self.social_domains:
+            return True
+
+        return any(
+            domain.endswith(
+                "." + social_domain
+            )
+            for social_domain
+            in self.social_domains
+        )
+
+    # =====================================================
+    # TEXT NORMALIZATION
+    # =====================================================
+
+    def _normalize_text(
+        self,
+        text: Any
+    ) -> str:
+
+        if text is None:
+            return ""
+
+        text = str(
+            text
+        ).lower()
+
+        text = re.sub(
+            r"https?://\S+",
+            " ",
+            text
+        )
+
+        text = re.sub(
+            r"[^a-z0-9\s]",
+            " ",
+            text
+        )
+
+        text = re.sub(
+            r"\s+",
+            " ",
+            text
+        )
+
+        return text.strip()
+
+    # =====================================================
+    # TEXT SIMILARITY
+    # =====================================================
+
+    def _text_similarity(
+        self,
+        first: Any,
+        second: Any
+    ) -> float:
+
+        first_text = self._normalize_text(
+            first
+        )
+
+        second_text = self._normalize_text(
+            second
+        )
+
+        if not first_text or not second_text:
+            return 0.0
+
+        if first_text == second_text:
+            return 1.0
+
+        return SequenceMatcher(
+            None,
+            first_text,
+            second_text
+        ).ratio()
+
+    # =====================================================
+    # UNIQUE
+    # =====================================================
+
+    def _unique(
+        self,
+        values: List[Any]
+    ) -> List[Any]:
+
+        result = []
+        seen = set()
+
+        for value in values:
+
+            if value is None:
+                continue
+
+            if isinstance(
+                value,
+                str
+            ):
+                normalized = value.strip()
+
+                if not normalized:
+                    continue
+
+                key = normalized.lower()
+
+            else:
+                key = str(
+                    value
+                )
+
+            if key in seen:
+                continue
+
+            seen.add(
+                key
+            )
+
+            result.append(
+                value
+            )
+
+        return result
+
+
+# =========================================================
+# DEFAULT ENGINE INSTANCE
+# =========================================================
+
+source_intelligence = (
+    SourceIntelligenceEngine()
+)
+
+
+# =========================================================
+# MODULE-LEVEL HELPERS
+# =========================================================
+
+def analyze_sources(
+    sources: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+
+    return source_intelligence.analyze(
+        sources
+    )
+
+
+def analyze(
+    sources: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+
+    return source_intelligence.analyze(
+        sources
+            )
