@@ -1,67 +1,129 @@
 """
 AI NEWS FACTORY
-SOURCE INTELLIGENCE ENGINE
+EDITORIAL ANGLE ENGINE
 
-Evaluates and organizes news sources before information is allowed
-to influence the reporting pipeline.
+Purpose
+-------
+Find the strongest editorial angle for a developing story.
+
+The factory should not simply rewrite existing articles.
+
+It should ask:
+
+    - What is actually new?
+    - What matters most?
+    - Who is affected?
+    - What changed?
+    - Why should the reader care?
+    - What is the consequence?
+    - What remains unknown?
+    - Is there a useful context angle?
+    - Is there a human-interest angle?
+    - Is there a business/economic angle?
+    - Is there a timeline/development angle?
+
+This engine generates candidate angles.
+
+It does NOT invent facts.
+
+Every angle must ultimately be supported by available
+evidence before publication.
 """
 
-from typing import Any, Dict, List
-from urllib.parse import urlparse
-from difflib import SequenceMatcher
+
+from typing import Any, Dict, List, Set
 import re
 
 
-class SourceIntelligenceEngine:
+class AngleEngine:
 
     def __init__(self):
-        self.name = "Source Intelligence Engine"
+
+        self.name = "Editorial Angle Intelligence Engine"
         self.version = "1.0.0"
 
-        self.source_type_weights = {
-            "PRIMARY": 100,
-            "OFFICIAL": 100,
-            "GOVERNMENT": 95,
-            "COURT": 95,
-            "REGULATORY": 95,
-            "ACADEMIC": 90,
-            "ESTABLISHED_NEWS": 85,
-            "WIRE": 85,
-            "SPECIALIST_MEDIA": 80,
-            "LOCAL_NEWS": 75,
-            "EXPERT": 75,
-            "BLOG": 50,
-            "SOCIAL": 30,
-            "USER_GENERATED": 20,
-            "UNKNOWN": 25,
-        }
+        self.angle_types = [
 
-        self.high_risk_source_types = {
-            "UNKNOWN",
-            "USER_GENERATED",
-        }
+            "BREAKING_DEVELOPMENT",
+            "WHY_IT_MATTERS",
+            "WHAT_CHANGED",
+            "WHAT_HAPPENS_NEXT",
+            "IMPACT",
+            "CONSEQUENCES",
+            "TIMELINE",
+            "EXPLAINER",
+            "CONTEXT",
+            "HUMAN_IMPACT",
+            "BUSINESS_IMPACT",
+            "POLITICAL_IMPACT",
+            "TECHNOLOGY_IMPACT",
+            "PUBLIC_REACTION",
+            "CONTROVERSY",
+            "UNANSWERED_QUESTIONS",
+            "DATA_ANGLE",
+            "COMPARISON"
+        ]
 
-        self.social_domains = {
-            "twitter.com",
-            "x.com",
-            "facebook.com",
-            "instagram.com",
-            "tiktok.com",
-            "youtube.com",
-            "reddit.com",
-            "threads.net",
-        }
+        self.impact_words = {
 
-        self.official_keywords = {
-            "gov",
+            "impact",
+            "effect",
+            "affect",
+            "cost",
+            "price",
+            "jobs",
+            "economy",
+            "business",
+            "market",
+            "people",
+            "families",
+            "workers",
+            "consumers",
             "government",
-            "official",
-            "ministry",
-            "court",
-            "police",
-            "agency",
-            "regulator",
-            "university",
+            "policy",
+            "change",
+            "risk",
+            "warning",
+            "benefit",
+            "loss"
+        }
+
+        self.development_words = {
+
+            "new",
+            "latest",
+            "update",
+            "breaking",
+            "announced",
+            "announces",
+            "confirmed",
+            "approved",
+            "rejected",
+            "released",
+            "launched",
+            "agreed",
+            "signed",
+            "arrested",
+            "resigned",
+            "elected",
+            "ordered",
+            "banned"
+        }
+
+        self.uncertainty_words = {
+
+            "may",
+            "might",
+            "could",
+            "possible",
+            "unclear",
+            "unknown",
+            "investigation",
+            "alleged",
+            "reportedly",
+            "unconfirmed",
+            "expected",
+            "pending"
         }
 
     # =====================================================
@@ -70,1292 +132,575 @@ class SourceIntelligenceEngine:
 
     def analyze(
         self,
-        sources: List[Dict[str, Any]]
+        story: Dict[str, Any],
+        related_stories: List[Dict[str, Any]] = None,
+        evidence: List[Dict[str, Any]] = None,
+        trend_data: Dict[str, Any] = None
     ) -> Dict[str, Any]:
 
-        normalized = self._normalize_sources(sources)
-
-        scored = [
-            self._score_source(source)
-            for source in normalized
-        ]
-
-        clusters = self._cluster_sources(scored)
-
-        independence = self._independence_analysis(
-            scored,
-            clusters
-        )
-
-        source_chain = self._build_source_chain(
-            scored
-        )
-
-        conflicts = self._detect_conflicts(
-            scored
-        )
-
-        overall = self._overall_source_quality(
-            scored,
-            independence,
-            conflicts
-        )
-
-        return {
-            "engine": self.name,
-            "version": self.version,
-            "status": "ANALYZED",
-            "source_count": len(scored),
-            "sources": scored,
-            "source_clusters": clusters,
-            "independence": independence,
-            "source_chain": source_chain,
-            "conflicts": conflicts,
-            "overall_quality": overall,
-            "recommendation": self._recommendation(
-                overall,
-                conflicts,
-                independence
-            ),
-        }
-
-    # =====================================================
-    # NORMALIZATION
-    # =====================================================
-
-    def _normalize_sources(
-        self,
-        sources: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        if isinstance(sources, dict):
-            sources = list(sources.values())
-
-        if not isinstance(sources, list):
-            return []
-
-        normalized = []
-
-        for index, source in enumerate(sources):
-
-            if isinstance(source, str):
-                source = {
-                    "url": source
-                }
-
-            if not isinstance(source, dict):
-                continue
-
-            url = str(
-                source.get("url", "")
-            ).strip()
-
-            title = str(
-                source.get(
-                    "title",
-                    source.get(
-                        "headline",
-                        ""
-                    )
-                )
-            ).strip()
-
-            name = str(
-                source.get(
-                    "name",
-                    source.get(
-                        "publisher",
-                        ""
-                    )
-                )
-            ).strip()
-
-            source_type = str(
-                source.get(
-                    "type",
-                    source.get(
-                        "source_type",
-                        "UNKNOWN"
-                    )
-                )
-            ).upper()
-
-            domain = self._domain(url)
-
-            if not name:
-                name = (
-                    domain
-                    or "Unknown Source"
-                )
-
-            normalized.append({
-                "id": source.get(
-                    "id",
-                    f"source_{index + 1}"
-                ),
-
-                "url": url,
-
-                "title": title,
-
-                "name": name,
-
-                "domain": domain,
-
-                "type": source_type,
-
-                "published_at":
-                    source.get(
-                        "published_at"
-                    ),
-
-                "retrieved_at":
-                    source.get(
-                        "retrieved_at"
-                    ),
-
-                "author":
-                    source.get(
-                        "author"
-                    ),
-
-                "text":
-                    source.get(
-                        "text",
-                        source.get(
-                            "excerpt",
-                            ""
-                        )
-                    ),
-
-                "primary":
-                    bool(
-                        source.get(
-                            "primary",
-                            False
-                        )
-                    ),
-
-                "official":
-                    bool(
-                        source.get(
-                            "official",
-                            False
-                        )
-                    ),
-
-                "independent":
-                    bool(
-                        source.get(
-                            "independent",
-                            False
-                        )
-                    ),
-
-                "authority":
-                    source.get(
-                        "authority",
-                        0
-                    ),
-
-                "original_source":
-                    source.get(
-                        "original_source"
-                    ),
-
-                "reliability":
-                    source.get(
-                        "reliability"
-                    ),
-
-                "freshness_score":
-                    source.get(
-                        "freshness_score"
-                    ),
-            })
-
-        return normalized
-
-    # =====================================================
-    # SOURCE SCORING
-    # =====================================================
-
-    def _score_source(
-        self,
-        source: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        authority = self._authority_score(
-            source
-        )
-
-        transparency = self._transparency_score(
-            source
-        )
-
-        primary_score = (
-            100
-            if source.get("primary")
-            else 0
-        )
-
-        freshness = self._freshness_score(
-            source
-        )
-
-        independence = (
-            100
-            if source.get("independent")
-            else 50
-        )
-
-        duplication_risk = (
-            20
-            if self._is_social_source(source)
-            else 0
-        )
-
-        if not source.get("author"):
-            duplication_risk += 5
-
-        total = (
-            authority * 0.30
-            + transparency * 0.15
-            + primary_score * 0.20
-            + freshness * 0.10
-            + independence * 0.10
-            + (100 - duplication_risk) * 0.15
-        )
-
-        total = int(
-            max(
-                0,
-                min(
-                    total,
-                    100
-                )
-            )
-        )
-
-        return {
-            **source,
-
-            "authority_score":
-                authority,
-
-            "transparency_score":
-                transparency,
-
-            "primary_source_score":
-                primary_score,
-
-            "freshness_score":
-                freshness,
-
-            "independence_score":
-                independence,
-
-            "duplication_risk":
-                duplication_risk,
-
-            "quality_score":
-                total,
-
-            "classification":
-                self._classification(
-                    total
-                ),
-        }
-
-    # =====================================================
-    # AUTHORITY
-    # =====================================================
-
-    def _authority_score(
-        self,
-        source: Dict[str, Any]
-    ) -> int:
-
-        explicit = source.get(
-            "authority"
-        )
-
-        if explicit is not None:
-
-            try:
-                value = float(
-                    explicit
-                )
-
-                if value > 0:
-                    return int(
-                        max(
-                            0,
-                            min(
-                                value,
-                                100
-                            )
-                        )
-                    )
-
-            except (
-                TypeError,
-                ValueError
-            ):
-                pass
-
-        source_type = str(
-            source.get(
-                "type",
-                "UNKNOWN"
-            )
-        ).upper()
-
-        score = self.source_type_weights.get(
-            source_type,
-            25
-        )
-
-        if source.get("official"):
-            score = max(
-                score,
-                90
-            )
-
-        domain = str(
-            source.get(
-                "domain",
-                ""
-            )
-        ).lower()
-
-        if any(
-            keyword in domain
-            for keyword in self.official_keywords
-        ):
-            score += 5
-
-        return min(
-            score,
-            100
-        )
-
-    # =====================================================
-    # TRANSPARENCY
-    # =====================================================
-
-    def _transparency_score(
-        self,
-        source: Dict[str, Any]
-    ) -> int:
-
-        score = 35
-
-        if source.get("name"):
-            score += 15
-
-        if source.get("author"):
-            score += 15
-
-        if source.get("published_at"):
-            score += 15
-
-        if source.get("url"):
-            score += 10
-
-        if source.get("text"):
-            score += 10
-
-        return min(
-            score,
-            100
-        )
-
-    # =====================================================
-    # FRESHNESS
-    # =====================================================
-
-    def _freshness_score(
-        self,
-        source: Dict[str, Any]
-    ) -> int:
-
-        if source.get(
-            "freshness_score"
-        ) is not None:
-
-            try:
-                return int(
-                    max(
-                        0,
-                        min(
-                            int(
-                                source[
-                                    "freshness_score"
-                                ]
-                            ),
-                            100
-                        )
-                    )
-                )
-
-            except (
-                TypeError,
-                ValueError
-            ):
-                pass
-
-        if source.get(
-            "published_at"
-        ):
-            return 80
-
-        return 50
-    # =====================================================
-    # CLUSTERING
-    # =====================================================
-
-    def _cluster_sources(
-        self,
-        sources: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        clusters = []
-
-        for source in sources:
-
-            placed = False
-
-            for cluster in clusters:
-
-                representative = (
-                    cluster["sources"][0]
-                )
-
-                similarity = (
-                    self._text_similarity(
-                        source.get(
-                            "title",
-                            ""
-                        ),
-                        representative.get(
-                            "title",
-                            ""
-                        )
-                    )
-                )
-
-                same_original = (
-                    bool(
-                        source.get(
-                            "original_source"
-                        )
-                    )
-                    and
-                    source.get(
-                        "original_source"
-                    )
-                    ==
-                    representative.get(
-                        "original_source"
-                    )
-                )
-
-                same_domain = (
-                    bool(
-                        source.get(
-                            "domain"
-                        )
-                    )
-                    and
-                    source.get(
-                        "domain"
-                    )
-                    ==
-                    representative.get(
-                        "domain"
-                    )
-                )
-
-                if (
-                    similarity >= 0.45
-                    or same_original
-                    or (
-                        same_domain
-                        and similarity >= 0.30
-                    )
-                ):
-
-                    cluster[
-                        "sources"
-                    ].append(
-                        source
-                    )
-
-                    placed = True
-                    break
-
-            if not placed:
-
-                clusters.append({
-                    "cluster_id":
-                        f"cluster_{len(clusters) + 1}",
-
-                    "sources": [
-                        source
-                    ]
-                })
-
-        result = []
-
-        for cluster in clusters:
-
-            cluster_sources = (
-                cluster["sources"]
-            )
-
-            domains = self._unique(
-                [
-                    source.get(
-                        "domain"
-                    )
-                    for source
-                    in cluster_sources
-                    if source.get(
-                        "domain"
-                    )
-                ]
-            )
-
-            result.append({
-                "cluster_id":
-                    cluster["cluster_id"],
-
-                "source_count":
-                    len(cluster_sources),
-
-                "independent_domains":
-                    len(domains),
-
-                "domains":
-                    domains,
-
-                "primary_sources": [
-                    source.get(
-                        "name"
-                    )
-                    for source
-                    in cluster_sources
-                    if source.get(
-                        "primary"
-                    )
-                ],
-
-                "likely_repetition": (
-                    len(domains) <= 1
-                    and
-                    len(cluster_sources) > 1
-                ),
-            })
-
-        return result
-
-    # =====================================================
-    # INDEPENDENCE
-    # =====================================================
-
-    def _independence_analysis(
-        self,
-        sources: List[Dict[str, Any]],
-        clusters: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-
-        domains = self._unique(
-            [
-                source.get(
-                    "domain"
-                )
-                for source in sources
-                if source.get(
-                    "domain"
-                )
-            ]
-        )
-
-        explicit_independent = sum(
-            1
-            for source in sources
-            if source.get(
-                "independent"
-            )
-        )
-
-        primary_count = sum(
-            1
-            for source in sources
-            if source.get(
-                "primary"
-            )
-        )
-
-        repeated_clusters = sum(
-            1
-            for cluster in clusters
-            if cluster.get(
-                "likely_repetition"
-            )
-        )
-
-        independent_score = 0
-
-        independent_score += min(
-            len(domains) * 10,
-            40
-        )
-
-        independent_score += min(
-            explicit_independent * 10,
-            30
-        )
-
-        independent_score += min(
-            primary_count * 15,
-            30
-        )
-
-        independent_score -= min(
-            repeated_clusters * 15,
-            30
-        )
-
-        independent_score = max(
-            0,
-            min(
-                independent_score,
-                100
-            )
-        )
-
-        return {
-            "unique_domains":
-                len(domains),
-
-            "domains":
-                domains,
-
-            "explicit_independent_sources":
-                explicit_independent,
-
-            "primary_sources":
-                primary_count,
-
-            "repeated_clusters":
-                repeated_clusters,
-
-            "independence_score":
-                independent_score,
-
-            "classification":
-                self._independence_classification(
-                    independent_score
-                ),
-        }
-
-    # =====================================================
-    # SOURCE CHAIN
-    # =====================================================
-
-    def _build_source_chain(
-        self,
-        sources: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-
-        primary = []
-        secondary = []
-        social = []
-        unknown = []
-
-        for source in sources:
-
-            if (
-                source.get("primary")
-                or source.get("official")
-            ):
-
-                primary.append(
-                    source.get("name")
-                )
-
-            elif self._is_social_source(
-                source
-            ):
-
-                social.append(
-                    source.get("name")
-                )
-
-            elif source.get(
-                "type"
-            ) in (
-                "UNKNOWN",
-                "USER_GENERATED",
-            ):
-
-                unknown.append(
-                    source.get("name")
-                )
-
-            else:
-
-                secondary.append(
-                    source.get("name")
-                )
-
-        return {
-            "original_source":
-                primary,
-
-            "primary_reports":
-                primary,
-
-            "secondary_reports":
-                secondary,
-
-            "social_amplification":
-                social,
-
-            "unknown_sources":
-                unknown,
-
-            "chain_depth": (
-                len(primary)
-                + len(secondary)
-                + len(social)
-            ),
-        }
-
-    # =====================================================
-    # CONFLICT DETECTION
-    # =====================================================
-
-    def _detect_conflicts(
-        self,
-        sources: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        conflicts = []
-
-        titles = [
-            source.get(
-                "title",
-                ""
-            ).strip()
-            for source in sources
-            if source.get(
-                "title"
-            )
-        ]
-
-        if len(titles) < 2:
-            return conflicts
-
-        for index in range(
-            len(sources)
-        ):
-
-            for other_index in range(
-                index + 1,
-                len(sources)
-            ):
-
-                first = sources[index]
-                second = sources[
-                    other_index
-                ]
-
-                first_title = str(
-                    first.get(
-                        "title",
-                        ""
-                    )
-                ).lower().strip()
-
-                second_title = str(
-                    second.get(
-                        "title",
-                        ""
-                    )
-                ).lower().strip()
-
-                if (
-                    not first_title
-                    or not second_title
-                ):
-                    continue
-
-                similarity = (
-                    self._text_similarity(
-                        first_title,
-                        second_title
-                    )
-                )
-
-                if similarity < 0.25:
-
-                    conflicts.append({
-                        "type":
-                            "LOW_TITLE_ALIGNMENT",
-
-                        "source_a":
-                            first.get(
-                                "name"
-                            ),
-
-                        "source_b":
-                            second.get(
-                                "name"
-                            ),
-
-                        "severity":
-                            "LOW",
-
-                        "message":
-                            "Sources appear to describe "
-                            "the story differently.",
-                    })
-
-        return conflicts
-
-    # =====================================================
-    # OVERALL SOURCE QUALITY
-    # =====================================================
-
-    def _overall_source_quality(
-        self,
-        sources: List[Dict[str, Any]],
-        independence: Dict[str, Any],
-        conflicts: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-
-        if not sources:
-
-            return {
-                "score": 0,
-                "classification":
-                    "NO_SOURCES",
-            }
-
-        quality_scores = [
-            source.get(
-                "quality_score",
-                0
-            )
-            for source in sources
-        ]
-
-        average_quality = (
-            sum(quality_scores)
-            / len(quality_scores)
-        )
-
-        independence_score = (
-            independence.get(
-                "independence_score",
-                0
-            )
-        )
-
-        conflict_penalty = min(
-            len(conflicts) * 5,
-            25
-        )
-
-        final_score = (
-            average_quality * 0.70
-            +
-            independence_score * 0.30
-            -
-            conflict_penalty
-        )
-
-        final_score = int(
-            max(
-                0,
-                min(
-                    final_score,
-                    100
-                )
-            )
-        )
-
-        return {
-            "score":
-                final_score,
-
-            "average_source_quality":
-                int(
-                    average_quality
-                ),
-
-            "independence_score":
-                independence_score,
-
-            "conflict_penalty":
-                conflict_penalty,
-
-            "classification":
-                self._classification(
-                    final_score
-                ),
-                        }
-    # =====================================================
-    # RECOMMENDATION
-    # =====================================================
-
-    def _recommendation(
-        self,
-        overall: Dict[str, Any],
-        conflicts: List[Dict[str, Any]],
-        independence: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        score = int(
-            overall.get(
-                "score",
-                0
-            )
-        )
-
-        independence_score = int(
-            independence.get(
-                "independence_score",
-                0
-            )
-        )
-
-        if score >= 80 and independence_score >= 50:
-
-            decision = "STRONG_SOURCE_BASE"
-
-        elif score >= 65:
-
-            decision = "ACCEPT_WITH_CORROBORATION"
-
-        elif score >= 45:
-
-            decision = "NEEDS_MORE_SOURCES"
-
-        else:
-
-            decision = "WEAK_SOURCE_BASE"
-
-        if conflicts:
-            note = (
-                "Source differences detected; "
-                "fact verification should resolve "
-                "material disagreements before publication."
-            )
-        else:
-            note = (
-                "No major source-alignment conflicts "
-                "were detected."
-            )
-
-        return {
-            "decision":
-                decision,
-
-            "score":
-                score,
-
-            "independence_score":
-                independence_score,
-
-            "conflict_count":
-                len(conflicts),
-
-            "note":
-                note,
-        }
-
-    # =====================================================
-    # CLASSIFICATION HELPERS
-    # =====================================================
-
-    def _classification(
-        self,
-        score: int
-    ) -> str:
-
-        score = int(
-            max(
-                0,
-                min(
-                    score,
-                    100
-                )
-            )
-        )
-
-        if score >= 85:
-            return "EXCELLENT"
-
-        if score >= 70:
-            return "STRONG"
-
-        if score >= 55:
-            return "MODERATE"
-
-        if score >= 40:
-            return "WEAK"
-
-        return "VERY_WEAK"
-
-    def _independence_classification(
-        self,
-        score: int
-    ) -> str:
-
-        score = int(
-            max(
-                0,
-                min(
-                    score,
-                    100
-                )
-            )
-        )
-
-        if score >= 80:
-            return "HIGHLY_INDEPENDENT"
-
-        if score >= 60:
-            return "INDEPENDENT"
-
-        if score >= 40:
-            return "MIXED"
-
-        if score >= 20:
-            return "LOW_INDEPENDENCE"
-
-        return "HIGH_REPETITION_RISK"
-
-    # =====================================================
-    # DOMAIN
-    # =====================================================
-
-    def _domain(
-        self,
-        url: str
-    ) -> str:
-
-        if not url:
-            return ""
-
-        try:
-
-            parsed = urlparse(
-                url
-            )
-
-            domain = (
-                parsed.netloc
-                or parsed.path.split("/")[0]
-            )
-
-            domain = domain.lower().strip()
-
-            if domain.startswith(
-                "www."
-            ):
-                domain = domain[4:]
-
-            return domain
-
-        except Exception:
-            return ""
-
-    # =====================================================
-    # SOCIAL SOURCE
-    # =====================================================
-
-    def _is_social_source(
-        self,
-        source: Dict[str, Any]
-    ) -> bool:
-
-        source_type = str(
-            source.get(
-                "type",
-                ""
-            )
-        ).upper()
-
-        if source_type == "SOCIAL":
-            return True
-
-        domain = str(
-            source.get(
-                "domain",
-                ""
-            )
-        ).lower().strip()
-
-        if domain.startswith(
-            "www."
-        ):
-            domain = domain[4:]
-
-        if domain in self.social_domains:
-            return True
-
-        return any(
-            domain.endswith(
-                "." + social_domain
-            )
-            for social_domain
-            in self.social_domains
-        )
-
-    # =====================================================
-    # TEXT NORMALIZATION
-    # =====================================================
-
-    def _normalize_text(
-        self,
-        text: Any
-    ) -> str:
-
-        if text is None:
-            return ""
-
-        text = str(
-            text
-        ).lower()
-
-        text = re.sub(
-            r"https?://\S+",
-            " ",
-            text
-        )
-
-        text = re.sub(
-            r"[^a-z0-9\s]",
-            " ",
-            text
-        )
-
-        text = re.sub(
-            r"\s+",
-            " ",
-            text
-        )
-
-        return text.strip()
-
-    # =====================================================
-    # TEXT SIMILARITY
-    # =====================================================
-
-    def _text_similarity(
-        self,
-        first: Any,
-        second: Any
-    ) -> float:
-
-        first_text = self._normalize_text(
-            first
-        )
-
-        second_text = self._normalize_text(
-            second
-        )
-
-        if not first_text or not second_text:
-            return 0.0
-
-        if first_text == second_text:
-            return 1.0
-
-        return SequenceMatcher(
-            None,
-            first_text,
-            second_text
-        ).ratio()
-
-    # =====================================================
-    # UNIQUE
-    # =====================================================
-
-    def _unique(
-        self,
-        values: List[Any]
-    ) -> List[Any]:
-
-        result = []
-        seen = set()
-
-        for value in values:
-
-            if value is None:
-                continue
-
+        story = (
+            story
             if isinstance(
-                value,
-                str
-            ):
-                normalized = value.strip()
+                story,
+                dict
+            )
+            else {}
+        )
 
-                if not normalized:
-                    continue
+        related_stories = (
+            related_stories
+            if isinstance(
+                related_stories,
+                list
+            )
+            else []
+        )
 
-                key = normalized.lower()
+        evidence = (
+            evidence
+            if isinstance(
+                evidence,
+                list
+            )
+            else []
+        )
 
-            else:
-                key = str(
-                    value
+        trend_data = (
+            trend_data
+            if isinstance(
+                trend_data,
+                dict
+            )
+            else {}
+        )
+
+        text = self._story_text(
+            story
+        )
+
+        candidates = []
+
+        for angle_type in self.angle_types:
+
+            candidate = self._generate_angle(
+                angle_type,
+                story,
+                related_stories,
+                evidence,
+                trend_data,
+                text
+            )
+
+            if candidate:
+
+                candidates.append(
+                    candidate
                 )
 
-            if key in seen:
-                continue
+        candidates = self._deduplicate(
+            candidates
+        )
 
-            seen.add(
-                key
+        candidates.sort(
+            key=lambda item:
+                item.get(
+                    "angle_score",
+                    0
+                ),
+            reverse=True
+        )
+
+        primary = (
+            candidates[0]
+            if candidates
+            else None
+        )
+
+        return {
+
+            "engine":
+                self.name,
+
+            "version":
+                self.version,
+
+            "status":
+                "ANGLE_ANALYSIS_COMPLETE",
+
+            "primary_angle":
+                primary,
+
+            "alternative_angles":
+                candidates[1:8],
+
+            "all_angles":
+                candidates,
+
+            "editorial_recommendation":
+                self._recommendation(
+                    candidates
+                )
+        }
+
+    # =====================================================
+    # GENERATE ANGLE
+    # =====================================================
+
+    def _generate_angle(
+        self,
+        angle_type: str,
+        story: Dict[str, Any],
+        related_stories: List[Dict[str, Any]],
+        evidence: List[Dict[str, Any]],
+        trend_data: Dict[str, Any],
+        text: str
+    ) -> Dict[str, Any]:
+
+        signals = self._signals(
+            story,
+            related_stories,
+            evidence,
+            trend_data,
+            text
+        )
+
+        score = 0.0
+
+        reason = ""
+
+        angle_description = ""
+
+        # -------------------------------------------------
+        # BREAKING DEVELOPMENT
+        # -------------------------------------------------
+
+        if angle_type == "BREAKING_DEVELOPMENT":
+
+            score = (
+                signals["newness"] * 0.45
+                +
+                signals["recency"] * 0.30
+                +
+                signals["evidence_strength"] * 0.25
             )
 
-            result.append(
-                value
+            reason = (
+                "The story contains a potentially new "
+                "or newly confirmed development."
             )
 
-        return result
-
-
-# =========================================================
-# DEFAULT ENGINE INSTANCE
-# =========================================================
-
-source_intelligence = (
-    SourceIntelligenceEngine()
-)
-
-
-# =========================================================
-# MODULE-LEVEL HELPERS
-# =========================================================
-
-def analyze_sources(
-    sources: List[Dict[str, Any]]
-) -> Dict[str, Any]:
-
-    return source_intelligence.analyze(
-        sources
-    )
-
-
-def analyze(
-    sources: List[Dict[str, Any]]
-) -> Dict[str, Any]:
-
-    return source_intelligence.analyze(
-        sources
+            angle_description = (
+                "Lead with what has just changed and "
+                "what is newly confirmed."
             )
+
+        # -------------------------------------------------
+        # WHY IT MATTERS
+        # -------------------------------------------------
+
+        elif angle_type == "WHY_IT_MATTERS":
+
+            score = (
+                signals["impact"] * 0.50
+                +
+                signals["specificity"] * 0.25
+                +
+                signals["evidence_strength"] * 0.25
+            )
+
+            reason = (
+                "The available information suggests "
+                "meaningful consequences for readers."
+            )
+
+            angle_description = (
+                "Explain the significance instead of "
+                "merely repeating the announcement."
+            )
+
+        # -------------------------------------------------
+        # WHAT CHANGED
+        # -------------------------------------------------
+
+        elif angle_type == "WHAT_CHANGED":
+
+            score = (
+                signals["newness"] * 0.40
+                +
+                signals["comparison"] * 0.35
+                +
+                signals["clarity"] * 0.25
+            )
+
+            reason = (
+                "There is enough information to identify "
+                "a meaningful change."
+            )
+
+            angle_description = (
+                "Clearly compare the situation before "
+                "and after the development."
+            )
+
+        # -------------------------------------------------
+        # WHAT HAPPENS NEXT
+        # -------------------------------------------------
+
+        elif angle_type == "WHAT_HAPPENS_NEXT":
+
+            score = (
+                signals["future_signal"] * 0.45
+                +
+                signals["impact"] * 0.30
+                +
+                signals["specificity"] * 0.25
+            )
+
+            reason = (
+                "The story contains identifiable next "
+                "steps, deadlines or pending decisions."
+            )
+
+            angle_description = (
+                "Focus on the next confirmed steps and "
+                "what readers should watch."
+            )
+
+        # -------------------------------------------------
+        # IMPACT
+        # -------------------------------------------------
+
+        elif angle_type == "IMPACT":
+
+            score = (
+                signals["impact"] * 0.55
+                +
+                signals["human_relevance"] * 0.25
+                +
+                signals["evidence_strength"] * 0.20
+            )
+
+            reason = (
+                "The development has a direct or indirect "
+                "effect on people, organizations or markets."
+            )
+
+            angle_description = (
+                "Center the measurable or clearly "
+                "supported consequences."
+            )
+
+        # -------------------------------------------------
+        # CONSEQUENCES
+        # -------------------------------------------------
+
+        elif angle_type == "CONSEQUENCES":
+
+            score = (
+                signals["impact"] * 0.45
+                +
+                signals["future_signal"] * 0.35
+                +
+                signals["specificity"] * 0.20
+            )
+
+            reason = (
+                "The story provides evidence of possible "
+                "downstream effects."
+            )
+
+            angle_description = (
+                "Explore supported consequences while "
+                "clearly separating facts from projections."
+            )
+
+        # -------------------------------------------------
+        # TIMELINE
+        # -------------------------------------------------
+
+        elif angle_type == "TIMELINE":
+
+            score = (
+                signals["timeline"] * 0.60
+                +
+                signals["comparison"] * 0.25
+                +
+                signals["clarity"] * 0.15
+            )
+
+            reason = (
+                "Multiple developments or dates can be "
+                "connected into a useful sequence."
+            )
+
+            angle_description = (
+                "Show readers how the story developed "
+                "from the beginning to the latest update."
+            )
+
+        # -------------------------------------------------
+        # EXPLAINER
+        # -------------------------------------------------
+
+        elif angle_type == "EXPLAINER":
+
+            score = (
+                signals["complexity"] * 0.40
+                +
+                signals["reader_need"] * 0.35
+                +
+                signals["context"] * 0.25
+            )
+
+            reason = (
+                "The subject contains terminology, "
+                "background or mechanics that readers "
+                "may need explained."
+            )
+
+            angle_description = (
+                "Explain the underlying issue in simple "
+                "language before discussing its impact."
+            )
+
+        # -------------------------------------------------
+        # CONTEXT
+        # -------------------------------------------------
+
+        elif angle_type == "CONTEXT":
+
+            score = (
+                signals["context"] * 0.50
+                +
+                signals["comparison"] * 0.25
+                +
+                signals["reader_need"] * 0.25
+            )
+
+            reason = (
+                "Background information materially "
+                "improves understanding."
+            )
+
+            angle_description = (
+                "Add only the background necessary to "
+                "understand why this development matters."
+            )
+
+        # -------------------------------------------------
+        # HUMAN IMPACT
+        # -------------------------------------------------
+
+        elif angle_type == "HUMAN_IMPACT":
+
+            score = (
+                signals["human_relevance"] * 0.55
+                +
+                signals["impact"] * 0.30
+                +
+                signals["specificity"] * 0.15
+            )
+
+            reason = (
+                "The story has a clear human consequence."
+            )
+
+            angle_description = (
+                "Show how the development affects real "
+                "people without manufacturing emotion."
+            )
+
+        # -------------------------------------------------
+        # BUSINESS IMPACT
+        # -------------------------------------------------
+
+        elif angle_type == "BUSINESS_IMPACT":
+
+            score = (
+                signals["business"] * 0.55
+                +
+                signals["impact"] * 0.30
+                +
+                signals["data"] * 0.15
+            )
+
+            reason = (
+                "The story contains meaningful business, "
+                "market, consumer or economic implications."
+            )
+
+            angle_description = (
+                "Focus on the verified business or "
+                "economic consequences."
+            )
+
+        # -------------------------------------------------
+        # POLITICAL IMPACT
+        # -------------------------------------------------
+
+        elif angle_type == "POLITICAL_IMPACT":
+
+            score = (
+                signals["political"] * 0.50
+                +
+                signals["impact"] * 0.30
+                +
+                signals["evidence_strength"] * 0.20
+            )
+
+            reason = (
+                "Political institutions, policies or "
+                "official decisions are central to the story."
+            )
+
+            angle_description = (
+                "Explain the political significance while "
+                "keeping factual reporting separate from opinion."
+            )
+
+        # -------------------------------------------------
+        # TECHNOLOGY IMPACT
+        # -------------------------------------------------
+
+        elif angle_type == "TECHNOLOGY_IMPACT":
+
+            score = (
+                signals["technology"] * 0.50
+                +
+                signals["impact"] * 0.30
+                +
+                signals["reader_need"] * 0.20
+            )
+
+            reason = (
+                "Technology is central and the development "
+                "has practical implications."
+            )
+
+            angle_description = (
+                "Explain what the technology actually "
+                "changes for users or organizations."
+            )
+
+        # -------------------------------------------------
+        # PUBLIC REACTION
+        # -------------------------------------------------
+
+        elif angle_type == "PUBLIC_REACTION":
+
+            score = (
+                signals["reaction"] * 0.55
+                +
+                signals["source_diversity"] * 0.25
+                +
+                signals["evidence_strength"] * 0.20
+            )
+
+            reason = (
+                "There is enough verified reaction from "
+                "relevant people or institutions."
+            )
+
+            angle_description = (
+                "Report meaningful reactions and distinguish "
+                "verified statements from online speculation."
+            )
+
+        # -------------------------------------------------
+        # CONTROVERSY
+        # -------------------------------------------------
+
+        elif angle_type == "CONTROVERSY":
+
+            score = (
+                signals["controversy"] * 0.45
+                +
+                signals["source_diversity"] * 0.30
+                +
+                signals["evidence_strength"] * 0.25
+            )
+
+            reason = (
+                "There are clearly documented competing "
+                "claims, disputes or disagreements."
+            )
+
+            angle_description = (
+                "Present the competing positions fairly "
+                "and identify what is actually established."
+            )
+
+        # -------------------------------------------------
+        # UNANSWERED QUESTIONS
+        # -------------------------------------------------
+
+        elif angle_type == "UNANSWERED_QUESTIONS":
+
+            score = (
+                signals["uncertainty"] * 0.50
+                +
+                signals["reader_need"] * 0.30
+                +
+                signals["complexity"] * 0.20
+            )
+
+            reason = (
+                "Important information remains unresolved."
+            )
+
+            angle_description = (
+                "Identify the important unanswered questions "
+                "without turning uncertainty into speculation."
+            )
+
+        # -------------------------------------------------
+        # DATA ANGLE
+        # -------------------------------------------------
+
+        elif angle_type == "DATA_ANGLE":
+
+            score = (
+                signals["data"] * 0.60
+                +
+                signals["comparison"] * 0.25
+                +
+                signals["specificity"] * 0.15
+            )
+
+            reason = (
+                "Numbers, measurable changes or datasets "
+                "could materially improve the story."
+            )
+
+            angle_description = (
+                "Lead with verified numbers and explain "
+                "what they mean."
+            )
+
+        # -------------------------------------------------
+        # COMPARISON
+        # -------------------------------------------------
+
+        elif angle_type == "COMPARISON":
+
+            score = (
+                signals["comparison"] * 0.55
+                +
+                signals["context"] * 0.25
+                +
+                signals["reader_need"] * 0.20
+            )
+
+            reason = (
+                "The story can be better understood through "
+                "a factual comparison."
+            )
+
+            angle_description = (
+                "Compare the current development with a "
+                "relevant previous situation."
+            )
+
+        else:
+
+            return {}
