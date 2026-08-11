@@ -153,3 +153,14 @@ class SourceIntelligenceEngine:
             if norm in seen:continue
             seen.add(norm);result.append(value)
         return result
+source_intelligence=SourceIntelligenceEngine()
+
+def analyze_sources(sources):
+    return source_intelligence.analyze(sources)
+
+def analyze(sources):
+    return source_intelligence.analyze(sources)
+
+if __name__=="__main__":
+    test_sources=[{"id":"source_1","name":"Example News","url":"https://example.com/story","type":"ESTABLISHED_NEWS","title":"Officials announce development","text":"Officials announced a new development in the investigation."}]
+    print(analyze_sources(test_sources))
