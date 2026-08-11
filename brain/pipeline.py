@@ -571,3 +571,218 @@ class BrainPipeline:
                 "status": "ERROR",
                 "error": str(error)
                     }
+        # =================================================
+        # 12. JOURNALIST
+        # =================================================
+
+        logger.info("12/15 Journalist")
+
+        try:
+
+            article_plan = (
+                self.journalist.create_article_plan(
+                    package
+                )
+            )
+
+            package[
+                "article_plan"
+            ] = article_plan
+
+        except Exception as error:
+
+            logger.exception(
+                "Journalist failed: %s",
+                error
+            )
+
+            package[
+                "article_plan"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 13. ENGAGEMENT
+        # =================================================
+
+        logger.info("13/15 Engagement")
+
+        try:
+
+            package[
+                "engagement"
+            ] = self.engagement.analyze(
+                package["story"]
+            )
+
+        except Exception as error:
+
+            logger.exception(
+                "Engagement failed: %s",
+                error
+            )
+
+            package[
+                "engagement"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 14. HEADLINE
+        # =================================================
+
+        logger.info("14/15 Headline")
+
+        try:
+
+            headline_result = (
+                self.headline.analyze(
+                    package["story"]
+                )
+            )
+
+            package[
+                "headline"
+            ] = headline_result
+
+            if isinstance(
+                headline_result,
+                dict
+            ):
+
+                headline = (
+                    headline_result.get(
+                        "recommended_headline"
+                    )
+                )
+
+                if headline:
+
+                    package[
+                        "story"
+                    ][
+                        "headline"
+                    ] = headline
+
+        except Exception as error:
+
+            logger.exception(
+                "Headline failed: %s",
+                error
+            )
+
+            package[
+                "headline"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 15. FINAL EDITOR
+        # =================================================
+
+        logger.info("15/15 Final editorial gate")
+
+        try:
+
+            editorial = (
+                self.editor.review(
+                    article_plan=package[
+                        "article_plan"
+                    ],
+                    psychology=package[
+                        "psychology"
+                    ],
+                    verification=package[
+                        "verification"
+                    ],
+                    cluster=package.get(
+                        "cluster",
+                        {}
+                    )
+                )
+            )
+
+            package[
+                "editorial"
+            ] = editorial
+
+        except Exception as error:
+
+            logger.exception(
+                "Editor failed: %s",
+                error
+            )
+
+            package[
+                "editorial"
+            ] = {
+                "decision":
+                    "NEEDS_REVISION",
+                "publication_gate":
+                    False,
+                "error": str(error)
+            }
+
+        # =================================================
+        # FINAL RESULT
+        # =================================================
+
+        editorial = package.get(
+            "editorial",
+            {}
+        )
+
+        decision = editorial.get(
+            "decision",
+            "NEEDS_REVISION"
+        )
+
+        package[
+            "pipeline_status"
+        ] = decision
+
+        package[
+            "publication_ready"
+        ] = (
+            decision == "APPROVED"
+        )
+
+        logger.info("=" * 60)
+
+        logger.info(
+            "BRAIN PIPELINE COMPLETE"
+        )
+
+        logger.info(
+            "Decision: %s",
+            decision
+        )
+
+        logger.info("=" * 60)
+
+        return package
+
+
+# =========================================================
+# HELPER
+# =========================================================
+
+def run_brain_pipeline(
+    sources: List[Dict[str, Any]],
+    story: Dict[str, Any] = None,
+    topic: str = ""
+) -> Dict[str, Any]:
+
+    pipeline = BrainPipeline()
+
+    return pipeline.run(
+        sources=sources,
+        story=story,
+        topic=topic
+                )
