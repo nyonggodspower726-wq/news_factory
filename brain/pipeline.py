@@ -677,3 +677,393 @@ class BrainPipeline:
             package[
                 "claims"
             ] = []
+        # =================================================
+        # 4. SOURCE GRAPH
+        # =================================================
+
+        logger.info(
+            "4/15 Source graph"
+        )
+
+        try:
+
+            source_graph = (
+                self.source_graph.build_graph(
+
+                    sources=sources,
+
+                    claims=package[
+                        "claims"
+                    ],
+
+                    entities=package[
+                        "story"
+                    ].get(
+                        "entities",
+                        []
+                    )
+                )
+            )
+
+            package[
+                "source_graph"
+            ] = source_graph
+
+        except Exception as error:
+
+            logger.exception(
+                "Source graph failed: %s",
+                error
+            )
+
+            package[
+                "source_graph"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+
+        # =================================================
+        # 5. CORROBORATION
+        # =================================================
+
+        logger.info(
+            "5/15 Corroboration"
+        )
+
+        try:
+
+            corroboration = (
+                self.corroboration.analyze(
+
+                    sources=sources,
+
+                    claims=package[
+                        "claims"
+                    ]
+                )
+            )
+
+            package[
+                "corroboration"
+            ] = corroboration
+
+        except Exception as error:
+
+            logger.exception(
+                "Corroboration failed: %s",
+                error
+            )
+
+            package[
+                "corroboration"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+
+        # =================================================
+        # 6. FACT CHECKING
+        # =================================================
+
+        logger.info(
+            "6/15 Fact checking"
+        )
+
+        try:
+
+            verification = (
+                self.fact_checker.verify_story(
+
+                    story=package[
+                        "story"
+                    ],
+
+                    sources=sources
+                )
+            )
+
+            package[
+                "verification"
+            ] = verification
+
+        except Exception as error:
+
+            logger.exception(
+                "Fact checking failed: %s",
+                error
+            )
+
+            package[
+                "verification"
+            ] = {
+
+                "publication_status":
+                    "HUMAN_REVIEW_REQUIRED",
+
+                "status":
+                    "ERROR",
+
+                "error":
+                    str(error)
+            }
+
+
+        # =================================================
+        # 7. STORY SYNTHESIS
+        # =================================================
+
+        logger.info(
+            "7/15 Story synthesis"
+        )
+
+        try:
+
+            synthesis = (
+                self.story_synthesis.synthesize(
+
+                    sources=sources,
+
+                    evidence=package.get(
+                        "claim_analysis",
+                        {}
+                    ),
+
+                    metadata={
+
+                        "topic":
+                            topic,
+
+                        "story":
+                            package[
+                                "story"
+                            ],
+
+                        "verification":
+                            package[
+                                "verification"
+                            ],
+
+                        "corroboration":
+                            package.get(
+                                "corroboration",
+                                {}
+                            ),
+
+                        "source_graph":
+                            package.get(
+                                "source_graph",
+                                {}
+                            ),
+
+                        "claims":
+                            package.get(
+                                "claims",
+                                []
+                            )
+                    }
+                )
+            )
+
+            package[
+                "synthesis"
+            ] = synthesis
+
+            if isinstance(
+                synthesis,
+                dict
+            ):
+
+                package[
+                    "story_model"
+                ] = synthesis
+
+        except Exception as error:
+
+            logger.exception(
+                "Story synthesis failed: %s",
+                error
+            )
+
+            package[
+                "synthesis"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+
+        # =================================================
+        # 8. SIGNIFICANCE
+        # =================================================
+
+        logger.info(
+            "8/15 Significance"
+        )
+
+        try:
+
+            significance = (
+                self.significance.evaluate(
+                    package[
+                        "story"
+                    ]
+                )
+            )
+
+            package[
+                "significance"
+            ] = significance
+
+        except Exception as error:
+
+            logger.exception(
+                "Significance failed: %s",
+                error
+            )
+
+            package[
+                "significance"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+
+        # =================================================
+        # 9. EDITORIAL ANGLE
+        # =================================================
+
+        logger.info(
+            "9/15 Editorial angle"
+        )
+
+        try:
+
+            angles = (
+                self.angle_finder.find_angles(
+
+                    package[
+                        "story"
+                    ],
+
+                    package[
+                        "significance"
+                    ]
+                )
+            )
+
+            package[
+                "angles"
+            ] = angles
+
+        except Exception as error:
+
+            logger.exception(
+                "Angle finder failed: %s",
+                error
+            )
+
+            package[
+                "angles"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+
+        # =================================================
+        # 10. READER PSYCHOLOGY
+        # =================================================
+
+        logger.info(
+            "10/15 Reader psychology"
+        )
+
+        try:
+
+            psychology = (
+                self.reader_psychology.analyze(
+
+                    story=package[
+                        "story"
+                    ],
+
+                    article=package.get(
+                        "article_plan",
+                        {}
+                    ),
+
+                    angle=package.get(
+                        "angles",
+                        {}
+                    )
+                )
+            )
+
+            package[
+                "psychology"
+            ] = psychology
+
+        except Exception as error:
+
+            logger.exception(
+                "Reader psychology failed: %s",
+                error
+            )
+
+            package[
+                "psychology"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+
+        # =================================================
+        # 11. NARRATIVE
+        # =================================================
+
+        logger.info(
+            "11/15 Narrative"
+        )
+
+        try:
+
+            narrative = (
+                self.narrative.build_blueprint(
+
+                    story=package[
+                        "story"
+                    ],
+
+                    psychology=package[
+                        "psychology"
+                    ],
+
+                    audience=package.get(
+                        "reader_intelligence",
+                        {}
+                    )
+                )
+            )
+
+            package[
+                "narrative"
+            ] = narrative
+
+        except Exception as error:
+
+            logger.exception(
+                "Narrative failed: %s",
+                error
+            )
+
+            package[
+                "narrative"
+            ] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
