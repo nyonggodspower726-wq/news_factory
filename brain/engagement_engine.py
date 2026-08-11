@@ -126,9 +126,11 @@ class EngagementEngine:
             story
         )
 
-        continuation = self._continuation_strategy(
-            story,
-            sections
+        continuation = (
+            self._continuation_strategy(
+                story,
+                sections
+            )
         )
 
         score = self._engagement_score(
@@ -225,15 +227,19 @@ class EngagementEngine:
         )
 
         if event and impact:
+
             style = "EVENT_PLUS_IMPACT"
 
         elif event and subject:
+
             style = "DIRECT_NEWS_LEAD"
 
         elif event:
+
             style = "DIRECT_EVENT_LEAD"
 
         else:
+
             style = "CONTEXT_FIRST"
 
         return {
@@ -278,7 +284,10 @@ class EngagementEngine:
             raw,
             str
         ):
-            raw = [raw]
+
+            raw = [
+                raw
+            ]
 
         if isinstance(
             raw,
@@ -302,6 +311,7 @@ class EngagementEngine:
         for question in defaults:
 
             if question not in questions:
+
                 questions.append(
                     question
                 )
@@ -309,6 +319,7 @@ class EngagementEngine:
         if story.get(
             "timeline"
         ):
+
             questions.append(
                 "How did we get here?"
             )
@@ -316,6 +327,7 @@ class EngagementEngine:
         if story.get(
             "controversy"
         ):
+
             questions.append(
                 "What is disputed?"
             )
@@ -323,6 +335,7 @@ class EngagementEngine:
         if story.get(
             "economic_impact"
         ):
+
             questions.append(
                 "What could this mean economically?"
             )
@@ -503,6 +516,7 @@ class EngagementEngine:
         )
 
         try:
+
             article_length = int(
                 article_length
             )
@@ -511,15 +525,19 @@ class EngagementEngine:
             TypeError,
             ValueError
         ):
+
             article_length = 800
 
         if article_length < 500:
+
             paragraph_target = "2-3 sentences"
 
         elif article_length < 1200:
+
             paragraph_target = "2-4 sentences"
 
         else:
+
             paragraph_target = "2-5 sentences"
 
         return {
@@ -649,6 +667,7 @@ class EngagementEngine:
         if story.get(
             "affected_groups"
         ):
+
             signals.append(
                 "PEOPLE_AFFECTED"
             )
@@ -656,6 +675,7 @@ class EngagementEngine:
         if story.get(
             "economic_impact"
         ):
+
             signals.append(
                 "ECONOMIC_IMPACT"
             )
@@ -663,6 +683,7 @@ class EngagementEngine:
         if story.get(
             "political_impact"
         ):
+
             signals.append(
                 "POLICY_IMPACT"
             )
@@ -670,6 +691,7 @@ class EngagementEngine:
         if story.get(
             "practical_impact"
         ):
+
             signals.append(
                 "PRACTICAL_IMPACT"
             )
@@ -677,6 +699,7 @@ class EngagementEngine:
         if story.get(
             "location"
         ):
+
             signals.append(
                 "GEOGRAPHIC_RELEVANCE"
             )
@@ -684,6 +707,7 @@ class EngagementEngine:
         if story.get(
             "what_happens_next"
         ):
+
             signals.append(
                 "FUTURE_DEVELOPMENT"
             )
@@ -732,14 +756,14 @@ class EngagementEngine:
 
         paragraphs = [
             paragraph.strip()
-            for paragraph
-            in body.split(
+            for paragraph in body.split(
                 "\n\n"
             )
             if paragraph.strip()
         ]
 
         reasons = []
+
         score = 0
 
         if len(
@@ -813,12 +837,15 @@ class EngagementEngine:
         )
 
         if score >= 60:
+
             level = "HIGH"
 
         elif score >= 30:
+
             level = "MEDIUM"
 
         else:
+
             level = "LOW"
 
         return {
@@ -908,178 +935,3 @@ class EngagementEngine:
         ) == "DIRECT_NEWS_LEAD":
 
             score += 10
-
-        score += min(
-            len(sections) * 3,
-            18
-        )
-
-        score += min(
-            len(curiosity) * 2,
-            18
-)
-            len(curiosity) * 2,
-            14
-        )
-
-        score += min(
-            relevance.get(
-                "signal_count",
-                0
-            ) * 3,
-            12
-        )
-
-        score -= min(
-            fatigue.get(
-                "score",
-                0
-            ) * 0.20,
-            20
-        )
-
-        return int(
-            max(
-                0,
-                min(
-                    score,
-                    100
-                )
-            )
-        )
-
-    # =====================================================
-    # READER VALUE
-    # =====================================================
-
-    def _reader_value(
-        self,
-        signal_count: int
-    ) -> str:
-
-        if signal_count >= 4:
-
-            return "VERY_HIGH"
-
-        if signal_count >= 2:
-
-            return "HIGH"
-
-        if signal_count == 1:
-
-            return "MODERATE"
-
-        return "LOW"
-
-    # =====================================================
-    # EDITORIAL RULE
-    # =====================================================
-
-    def _editorial_rule(
-        self,
-        score: int
-    ) -> str:
-
-        if score >= 80:
-
-            return (
-                "Strong engagement structure. "
-                "Maintain factual clarity while "
-                "continuing to add useful information."
-            )
-
-        if score >= 60:
-
-            return (
-                "Solid engagement structure. "
-                "Strengthen relevance, clarity and "
-                "section-to-section information value."
-            )
-
-        if score >= 40:
-
-            return (
-                "Moderate engagement structure. "
-                "Improve the opening, reader relevance "
-                "and information progression."
-            )
-
-        return (
-            "Weak engagement structure. "
-            "Prioritize confirmed facts, reader value, "
-            "clear context and useful consequences."
-        )
-
-    # =====================================================
-    # UNIQUE VALUES
-    # =====================================================
-
-    def _unique(
-        self,
-        items: List[str]
-    ) -> List[str]:
-
-        seen = set()
-        result = []
-
-        for item in items:
-
-            value = str(
-                item
-            ).strip()
-
-            if not value:
-                continue
-
-            key = value.lower()
-
-            if key in seen:
-                continue
-
-            seen.add(
-                key
-            )
-
-            result.append(
-                value
-            )
-
-        return result
-
-
-# =========================================================
-# OPTIONAL DIRECT TEST
-# =========================================================
-
-if __name__ == "__main__":
-
-    engine = EngagementEngine()
-
-    test_story = {
-
-        "event":
-            "A major policy announcement was made.",
-
-        "why_it_matters":
-            "The policy could affect businesses and consumers.",
-
-        "affected_groups":
-            [
-                "businesses",
-                "consumers"
-            ],
-
-        "what_happens_next":
-            "Officials are expected to provide further details.",
-
-        "target_word_count":
-            800
-    }
-
-    result = engine.analyze(
-        test_story
-    )
-
-    print(
-        result
-    )
