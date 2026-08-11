@@ -704,3 +704,925 @@ class AngleEngine:
         else:
 
             return {}
+        # =====================================================
+        # BUILD CANDIDATE
+        # =====================================================
+
+        score = int(
+            max(
+                0,
+                min(
+                    round(score),
+                    100
+                )
+            )
+        )
+
+        confidence = self._confidence(
+            score,
+            signals
+        )
+
+        return {
+
+            "angle_type":
+                angle_type,
+
+            "angle_score":
+                score,
+
+            "confidence":
+                confidence,
+
+            "reason":
+                reason,
+
+            "description":
+                angle_description,
+
+            "signals":
+                signals,
+
+            "evidence_required":
+                self._evidence_required(
+                    angle_type
+                ),
+
+            "publication_safe":
+                (
+                    score >= 60
+                    and
+                    confidence != "LOW"
+                )
+        }
+
+    # =====================================================
+    # SIGNAL ANALYSIS
+    # =====================================================
+
+    def _signals(
+        self,
+        story: Dict[str, Any],
+        related_stories: List[Dict[str, Any]],
+        evidence: List[Dict[str, Any]],
+        trend_data: Dict[str, Any],
+        text: str
+    ) -> Dict[str, int]:
+
+        lowered = (
+            str(
+                text or ""
+            )
+            .lower()
+        )
+
+        words = set(
+            re.findall(
+                r"\b[a-zA-Z]{3,}\b",
+                lowered
+            )
+        )
+
+        # -------------------------------------------------
+        # DEVELOPMENT
+        # -------------------------------------------------
+
+        development_hits = sum(
+            1
+            for word in self.development_words
+            if word in words
+        )
+
+        newness = min(
+            100,
+            development_hits * 20
+        )
+
+        # -------------------------------------------------
+        # RECENCY
+        # -------------------------------------------------
+
+        recency = 50
+
+        if story.get(
+            "published_at"
+        ):
+            recency = 80
+
+        if story.get(
+            "updated_at"
+        ):
+            recency = 90
+
+        if any(
+            word in lowered
+            for word in (
+                "today",
+                "just now",
+                "breaking",
+                "latest",
+                "minutes ago",
+                "hours ago"
+            )
+        ):
+            recency = 100
+
+        # -------------------------------------------------
+        # IMPACT
+        # -------------------------------------------------
+
+        impact_hits = sum(
+            1
+            for word in self.impact_words
+            if word in words
+        )
+
+        impact = min(
+            100,
+            impact_hits * 12
+        )
+
+        if story.get(
+            "impact"
+        ):
+
+            impact = max(
+                impact,
+                self._numeric_signal(
+                    story.get(
+                        "impact"
+                    )
+                )
+            )
+
+        # -------------------------------------------------
+        # EVIDENCE
+        # -------------------------------------------------
+
+        if not evidence:
+
+            evidence_strength = 20
+
+        else:
+
+            evidence_strength = min(
+                100,
+                len(evidence) * 20
+            )
+
+        # -------------------------------------------------
+        # SPECIFICITY
+        # -------------------------------------------------
+
+        specificity = 40
+
+        if story.get(
+            "entities"
+        ):
+            specificity += 20
+
+        if story.get(
+            "location"
+        ):
+            specificity += 10
+
+        if story.get(
+            "date"
+        ):
+            specificity += 10
+
+        if re.search(
+            r"\b\d+(?:\.\d+)?%?\b",
+            lowered
+        ):
+            specificity += 10
+
+        specificity = min(
+            specificity,
+            100
+        )
+
+        # -------------------------------------------------
+        # COMPARISON
+        # -------------------------------------------------
+
+        comparison = 20
+
+        if related_stories:
+
+            comparison += min(
+                50,
+                len(
+                    related_stories
+                ) * 10
+            )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "compared with",
+                "compared to",
+                "previously",
+                "last year",
+                "last month",
+                "earlier",
+                "unlike",
+                "versus",
+                "vs"
+            )
+        ):
+
+            comparison += 30
+
+        comparison = min(
+            comparison,
+            100
+        )
+
+        # -------------------------------------------------
+        # FUTURE SIGNAL
+        # -------------------------------------------------
+
+        future_markers = (
+
+            "next",
+            "will",
+            "expected",
+            "plans",
+            "planned",
+            "deadline",
+            "coming",
+            "future",
+            "pending",
+            "scheduled",
+            "set to"
+        )
+
+        future_hits = sum(
+            1
+            for marker
+            in future_markers
+            if marker in lowered
+        )
+
+        future_signal = min(
+            100,
+            20 + future_hits * 15
+        )
+
+        # -------------------------------------------------
+        # HUMAN RELEVANCE
+        # -------------------------------------------------
+
+        human_markers = (
+
+            "people",
+            "families",
+            "workers",
+            "students",
+            "children",
+            "patients",
+            "residents",
+            "customers",
+            "consumers",
+            "victims",
+            "community",
+            "public"
+        )
+
+        human_hits = sum(
+            1
+            for marker
+            in human_markers
+            if marker in lowered
+        )
+
+        human_relevance = min(
+            100,
+            human_hits * 15
+        )
+
+        # -------------------------------------------------
+        # BUSINESS
+        # -------------------------------------------------
+
+        business_markers = (
+
+            "business",
+            "company",
+            "companies",
+            "market",
+            "stock",
+            "shares",
+            "profit",
+            "revenue",
+            "investment",
+            "investors",
+            "economy",
+            "economic",
+            "trade",
+            "jobs",
+            "consumer",
+            "customers"
+        )
+
+        business_hits = sum(
+            1
+            for marker
+            in business_markers
+            if marker in lowered
+        )
+
+        business = min(
+            100,
+            business_hits * 15
+        )
+
+        # -------------------------------------------------
+        # POLITICAL
+        # -------------------------------------------------
+
+        political_markers = (
+
+            "government",
+            "president",
+            "minister",
+            "senate",
+            "senator",
+            "congress",
+            "parliament",
+            "election",
+            "vote",
+            "policy",
+            "political",
+            "party",
+            "law",
+            "legislation"
+        )
+
+        political_hits = sum(
+            1
+            for marker
+            in political_markers
+            if marker in lowered
+        )
+
+        political = min(
+            100,
+            political_hits * 12
+        )
+
+        # -------------------------------------------------
+        # TECHNOLOGY
+        # -------------------------------------------------
+
+        technology_markers = (
+
+            "technology",
+            "technology",
+            "software",
+            "artificial intelligence",
+            "ai",
+            "algorithm",
+            "computer",
+            "cyber",
+            "internet",
+            "robot",
+            "chip",
+            "app",
+            "platform",
+            "digital"
+        )
+
+        technology_hits = sum(
+            1
+            for marker
+            in technology_markers
+            if marker in lowered
+        )
+
+        technology = min(
+            100,
+            technology_hits * 15
+        )
+
+        # -------------------------------------------------
+        # REACTION
+        # -------------------------------------------------
+
+        reaction_markers = (
+
+            "reaction",
+            "reacted",
+            "responded",
+            "response",
+            "criticism",
+            "critics",
+            "supporters",
+            "statement",
+            "comment",
+            "comments",
+            "public",
+            "social media"
+        )
+
+        reaction_hits = sum(
+            1
+            for marker
+            in reaction_markers
+            if marker in lowered
+        )
+
+        reaction = min(
+            100,
+            reaction_hits * 15
+        )
+
+        # -------------------------------------------------
+        # CONTROVERSY
+        # -------------------------------------------------
+
+        controversy_markers = (
+
+            "controversy",
+            "controversial",
+            "dispute",
+            "disputed",
+            "conflict",
+            "criticism",
+            "accused",
+            "allegation",
+            "alleged",
+            "opposition",
+            "denied",
+            "denies"
+        )
+
+        controversy_hits = sum(
+            1
+            for marker
+            in controversy_markers
+            if marker in lowered
+        )
+
+        controversy = min(
+            100,
+            controversy_hits * 15
+        )
+
+        # -------------------------------------------------
+        # UNCERTAINTY
+        # -------------------------------------------------
+
+        uncertainty_hits = sum(
+            1
+            for marker
+            in self.uncertainty_words
+            if marker in lowered
+        )
+
+        uncertainty = min(
+            100,
+            uncertainty_hits * 15
+        )
+
+        # -------------------------------------------------
+        # DATA
+        # -------------------------------------------------
+
+        number_matches = re.findall(
+            r"\b\d+(?:\.\d+)?%?\b",
+            lowered
+        )
+
+        data = min(
+            100,
+            len(
+                number_matches
+            ) * 15
+        )
+
+        if trend_data:
+
+            data = max(
+                data,
+                60
+            )
+
+        # -------------------------------------------------
+        # TIMELINE
+        # -------------------------------------------------
+
+        timeline_markers = (
+
+            "before",
+            "after",
+            "earlier",
+            "previously",
+            "since",
+            "then",
+            "later",
+            "first",
+            "next",
+            "timeline",
+            "history",
+            "last year",
+            "last month"
+        )
+
+        timeline_hits = sum(
+            1
+            for marker
+            in timeline_markers
+            if marker in lowered
+        )
+
+        timeline = min(
+            100,
+            20 + timeline_hits * 10
+        )
+
+        if related_stories:
+
+            timeline = min(
+                100,
+                timeline
+                + min(
+                    30,
+                    len(
+                        related_stories
+                    ) * 5
+                )
+            )
+
+        # -------------------------------------------------
+        # CONTEXT
+        # -------------------------------------------------
+
+        context = 30
+
+        if related_stories:
+
+            context += min(
+                40,
+                len(
+                    related_stories
+                ) * 8
+            )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "background",
+                "history",
+                "previously",
+                "context",
+                "according to"
+            )
+        ):
+
+            context += 30
+
+        context = min(
+            context,
+            100
+        )
+
+        # -------------------------------------------------
+        # COMPLEXITY
+        # -------------------------------------------------
+
+        sentence_count = max(
+            1,
+            len(
+                self._sentences(
+                    text
+                )
+            )
+        )
+
+        complexity = min(
+            100,
+            25
+            + sentence_count * 5
+        )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "how",
+                "why",
+                "process",
+                "system",
+                "mechanism",
+                "technical",
+                "regulation"
+            )
+        ):
+
+            complexity += 25
+
+        complexity = min(
+            complexity,
+            100
+        )
+
+        # -------------------------------------------------
+        # READER NEED
+        # -------------------------------------------------
+
+        reader_need = max(
+            impact,
+            complexity,
+            context
+        )
+
+        if any(
+            marker in lowered
+            for marker in (
+                "what does this mean",
+                "what it means",
+                "why it matters",
+                "how it works"
+            )
+        ):
+
+            reader_need = min(
+                100,
+                reader_need + 20
+            )
+
+        # -------------------------------------------------
+        # CLARITY
+        # -------------------------------------------------
+
+        clarity = 60
+
+        if story.get(
+            "title"
+        ):
+            clarity += 10
+
+        if story.get(
+            "summary"
+        ):
+            clarity += 15
+
+        if story.get(
+            "entities"
+        ):
+            clarity += 15
+
+        clarity = min(
+            clarity,
+            100
+        )
+
+        # -------------------------------------------------
+        # SOURCE DIVERSITY
+        # -------------------------------------------------
+
+        domains = set()
+
+        for item in evidence:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+                continue
+
+            domain = (
+                item.get(
+                    "domain"
+                )
+                or
+                item.get(
+                    "source"
+                )
+                or
+                item.get(
+                    "publisher"
+                )
+            )
+
+            if domain:
+
+                domains.add(
+                    str(
+                        domain
+                    ).lower()
+                )
+
+        source_diversity = min(
+            100,
+            len(domains) * 20
+        )
+
+        # If no evidence metadata exists,
+        # avoid pretending there is strong diversity.
+        if not evidence:
+
+            source_diversity = 20
+
+        # -------------------------------------------------
+        # RETURN SIGNAL PACKAGE
+        # -------------------------------------------------
+
+        return {
+
+            "newness":
+                int(newness),
+
+            "recency":
+                int(recency),
+
+            "impact":
+                int(impact),
+
+            "evidence_strength":
+                int(evidence_strength),
+
+            "specificity":
+                int(specificity),
+
+            "comparison":
+                int(comparison),
+
+            "future_signal":
+                int(future_signal),
+
+            "human_relevance":
+                int(human_relevance),
+
+            "business":
+                int(business),
+
+            "political":
+                int(political),
+
+            "technology":
+                int(technology),
+
+            "reaction":
+                int(reaction),
+
+            "controversy":
+                int(controversy),
+
+            "uncertainty":
+                int(uncertainty),
+
+            "data":
+                int(data),
+
+            "timeline":
+                int(timeline),
+
+            "context":
+                int(context),
+
+            "complexity":
+                int(complexity),
+
+            "reader_need":
+                int(reader_need),
+
+            "clarity":
+                int(clarity),
+
+            "source_diversity":
+                int(source_diversity)
+        }
+
+    # =====================================================
+    # CONFIDENCE
+    # =====================================================
+
+    def _confidence(
+        self,
+        score: int,
+        signals: Dict[str, int]
+    ) -> str:
+
+        evidence = signals.get(
+            "evidence_strength",
+            0
+        )
+
+        uncertainty = signals.get(
+            "uncertainty",
+            0
+        )
+
+        if score >= 80 and evidence >= 60 and uncertainty < 50:
+
+            return "HIGH"
+
+        if score >= 60 and evidence >= 40:
+
+            return "MEDIUM"
+
+        return "LOW"
+
+    # =====================================================
+    # EVIDENCE REQUIREMENTS
+    # =====================================================
+
+    def _evidence_required(
+        self,
+        angle_type: str
+    ) -> List[str]:
+
+        requirements = {
+
+            "BREAKING_DEVELOPMENT": [
+                "recent source",
+                "independent confirmation"
+            ],
+
+            "WHY_IT_MATTERS": [
+                "verified impact",
+                "relevant context"
+            ],
+
+            "WHAT_CHANGED": [
+                "previous state",
+                "current state"
+            ],
+
+            "WHAT_HAPPENS_NEXT": [
+                "confirmed next step",
+                "official timeline if available"
+            ],
+
+            "IMPACT": [
+                "affected people or organizations",
+                "verified consequence"
+            ],
+
+            "CONSEQUENCES": [
+                "documented consequence",
+                "clear attribution"
+            ],
+
+            "TIMELINE": [
+                "verified dates",
+                "chronological evidence"
+            ],
+
+            "EXPLAINER": [
+                "reliable background source",
+                "clear factual explanation"
+            ],
+
+            "CONTEXT": [
+                "reliable historical context"
+            ],
+
+            "HUMAN_IMPACT": [
+                "verified human impact",
+                "attributable statements"
+            ],
+
+            "BUSINESS_IMPACT": [
+                "business data",
+                "market or company evidence"
+            ],
+
+            "POLITICAL_IMPACT": [
+                "official statements",
+                "independent reporting"
+            ],
+
+            "TECHNOLOGY_IMPACT": [
+                "technical evidence",
+                "reliable source"
+            ],
+
+            "PUBLIC_REACTION": [
+                "direct statements",
+                "diverse reaction sources"
+            ],
+
+            "CONTROVERSY": [
+                "competing claims",
+                "attribution",
+                "independent evidence"
+            ],
+
+            "UNANSWERED_QUESTIONS": [
+                "confirmed unknowns",
+                "evidence showing what remains unresolved"
+            ],
+
+            "DATA_ANGLE": [
+                "verified numbers",
+                "reliable dataset"
+            ],
+
+            "COMPARISON": [
+                "comparable historical information",
+                "consistent measurements"
+            ]
+      
