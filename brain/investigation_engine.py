@@ -237,3 +237,34 @@ def assess_investigation(story=None,research=None,claims=None,sources=None):
         claims=claims,
         sources=sources
         )
+if __name__=="__main__":
+    example_story={
+        "title":"Officials announce a new investigation",
+        "description":"Officials announced a new investigation after reports raised questions.",
+        "developing":True
+    }
+
+    example_claims=[
+        {
+            "id":"claim_1",
+            "text":"Officials announced a new investigation.",
+            "importance":"HIGH",
+            "requires_verification":True
+        }
+    ]
+
+    example_sources=[
+        {
+            "id":"source_1",
+            "name":"Example News",
+            "primary":False
+        }
+    ]
+
+    result=investigation_engine.investigate(
+        story=example_story,
+        claims=example_claims,
+        sources=example_sources
+    )
+
+    print(result)
