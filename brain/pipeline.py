@@ -659,3 +659,56 @@ class BrainPipeline:
                 "error":
                     str(error)
             }
+        # =================================================
+        # FINAL RESULT
+        # =================================================
+
+        editorial = package.get(
+            "editorial",
+            {}
+        )
+
+        decision = editorial.get(
+            "decision",
+            "NEEDS_REVISION"
+        )
+
+        package["pipeline_status"] = decision
+
+        package["publication_ready"] = (
+            decision == "APPROVED"
+        )
+
+        logger.info("=" * 60)
+
+        logger.info(
+            "BRAIN PIPELINE COMPLETE"
+        )
+
+        logger.info(
+            "Decision: %s",
+            decision
+        )
+
+        logger.info("=" * 60)
+
+        return package
+
+
+# =========================================================
+# HELPER
+# =========================================================
+
+def run_brain_pipeline(
+    sources: List[Dict[str, Any]],
+    story: Dict[str, Any] = None,
+    topic: str = ""
+) -> Dict[str, Any]:
+
+    pipeline = BrainPipeline()
+
+    return pipeline.run(
+        sources=sources,
+        story=story,
+        topic=topic
+                )
