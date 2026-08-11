@@ -97,7 +97,7 @@ class BrainPipeline:
             "engine": "BrainPipeline",
             "version": "1.0.0",
             "initialized": True,
-
+            "total_brains": len(loaded_brains),
             "loaded_brains": loaded_brains,
 
             "engines": {
