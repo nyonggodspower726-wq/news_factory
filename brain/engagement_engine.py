@@ -918,3 +918,168 @@ class EngagementEngine:
             len(curiosity) * 2,
             18
 )
+            len(curiosity) * 2,
+            14
+        )
+
+        score += min(
+            relevance.get(
+                "signal_count",
+                0
+            ) * 3,
+            12
+        )
+
+        score -= min(
+            fatigue.get(
+                "score",
+                0
+            ) * 0.20,
+            20
+        )
+
+        return int(
+            max(
+                0,
+                min(
+                    score,
+                    100
+                )
+            )
+        )
+
+    # =====================================================
+    # READER VALUE
+    # =====================================================
+
+    def _reader_value(
+        self,
+        signal_count: int
+    ) -> str:
+
+        if signal_count >= 4:
+
+            return "VERY_HIGH"
+
+        if signal_count >= 2:
+
+            return "HIGH"
+
+        if signal_count == 1:
+
+            return "MODERATE"
+
+        return "LOW"
+
+    # =====================================================
+    # EDITORIAL RULE
+    # =====================================================
+
+    def _editorial_rule(
+        self,
+        score: int
+    ) -> str:
+
+        if score >= 80:
+
+            return (
+                "Strong engagement structure. "
+                "Maintain factual clarity while "
+                "continuing to add useful information."
+            )
+
+        if score >= 60:
+
+            return (
+                "Solid engagement structure. "
+                "Strengthen relevance, clarity and "
+                "section-to-section information value."
+            )
+
+        if score >= 40:
+
+            return (
+                "Moderate engagement structure. "
+                "Improve the opening, reader relevance "
+                "and information progression."
+            )
+
+        return (
+            "Weak engagement structure. "
+            "Prioritize confirmed facts, reader value, "
+            "clear context and useful consequences."
+        )
+
+    # =====================================================
+    # UNIQUE VALUES
+    # =====================================================
+
+    def _unique(
+        self,
+        items: List[str]
+    ) -> List[str]:
+
+        seen = set()
+        result = []
+
+        for item in items:
+
+            value = str(
+                item
+            ).strip()
+
+            if not value:
+                continue
+
+            key = value.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(
+                key
+            )
+
+            result.append(
+                value
+            )
+
+        return result
+
+
+# =========================================================
+# OPTIONAL DIRECT TEST
+# =========================================================
+
+if __name__ == "__main__":
+
+    engine = EngagementEngine()
+
+    test_story = {
+
+        "event":
+            "A major policy announcement was made.",
+
+        "why_it_matters":
+            "The policy could affect businesses and consumers.",
+
+        "affected_groups":
+            [
+                "businesses",
+                "consumers"
+            ],
+
+        "what_happens_next":
+            "Officials are expected to provide further details.",
+
+        "target_word_count":
+            800
+    }
+
+    result = engine.analyze(
+        test_story
+    )
+
+    print(
+        result
+    )
