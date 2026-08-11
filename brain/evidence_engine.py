@@ -137,3 +137,33 @@ class EvidenceEngine:
         if score>=80:return "PUBLISH_IF_EDITOR_APPROVES"
         if score>=60:return "USE_WITH_CONTEXT"
         return "VERIFY_BEFORE_PUBLICATION"
+    def _summary(self,claims):
+        counts={}
+        for c in claims:
+            status=c.get("publication_status","INSUFFICIENT_SUPPORT");counts[status]=counts.get(status,0)+1
+        total=len(claims);avg=round(sum(c.get("evidence_score",0) for c in claims)/total,2) if total else 0
+        return {"total_claims":total,"strong_support":counts.get("STRONG_SUPPORT",0),"moderate_support":counts.get("MODERATE_SUPPORT",0),"weak_support":counts.get("WEAK_SUPPORT",0),"insufficient_support":counts.get("INSUFFICIENT_SUPPORT",0),"hold_for_review":counts.get("HOLD_FOR_REVIEW",0),"attribute_or_label":counts.get("ATTRIBUTE_OR_LABEL",0),"average_evidence_score":avg}
+
+    def _publication_readiness(self,claims):
+        if not claims:return {"status":"NO_CLAIMS","score":0,"ready":False}
+        blockers=sum(1 for c in claims if c.get("publication_status") in {"HOLD_FOR_REVIEW","INSUFFICIENT_SUPPORT"})
+        scores=[c.get("evidence_score",0) for c in claims if c.get("claim_type")=="FACT"]
+        avg=sum(scores)/len(scores) if scores else 0
+        ready=blockers==0 and avg>=70
+        return {"status":"READY" if ready else "REVIEW_REQUIRED","score":round(avg,2),"blocking_claims":blockers,"ready":ready}
+
+    def _number(self,value,default=0):
+        try:return float(value)
+        except (TypeError,ValueError):return default
+
+    def _tokens(self,text):
+        return re.findall(r"\b[a-z0-9]{3,}\b",str(text or "").lower())
+
+
+evidence_engine=EvidenceEngine()
+
+def analyze_evidence(claims,sources):
+    return evidence_engine.analyze(claims,sources)
+
+def analyze(claims,sources):
+    return evidence_engine.analyze(claims,sources)
