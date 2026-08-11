@@ -96,3 +96,68 @@ class InvestigationEngine:
         if not questions:
             questions.append("No major unanswered research question was automatically detected.")
         return self._unique(questions)
+    def _actions(self,level,signals,questions):
+        actions=[]
+        if level in {"DEEP","URGENT"}:
+            actions.extend([
+                {"action":"locate_primary_evidence","priority":"CRITICAL","reason":"High investigation score requires stronger evidence."},
+                {"action":"cross_check_independent_sources","priority":"CRITICAL","reason":"Do not treat repeated reporting as independent confirmation."}
+            ])
+        if signals.get("contradiction_count",0):
+            actions.append({"action":"resolve_conflicting_claims","priority":"HIGH","reason":"Conflicting claims were detected."})
+        if signals.get("allegation_count",0):
+            actions.append({"action":"seek_response_from_subject","priority":"HIGH","reason":"The story contains allegations or accusations."})
+        if signals.get("rapidly_changing",False):
+            actions.append({"action":"monitor_story_for_updates","priority":"HIGH","reason":"The story appears to be developing."})
+        actions.extend([
+            {"action":"run_claim_verification","priority":"REQUIRED","reason":"All material factual claims should pass verification."},
+            {"action":"run_editorial_review","priority":"REQUIRED","reason":"Research findings must be evaluated before publication."}
+        ])
+        return actions
+
+    def _priorities(self,claims,signals):
+        priorities=[]
+        for i,claim in enumerate(claims):
+            if not isinstance(claim,dict):continue
+            text=str(claim.get("text",claim.get("claim",""))).strip()
+            if not text:continue
+            risk=0
+            low=text.lower()
+            if any(x in low for x in self.high_risk_terms):risk+=40
+            if claim.get("requires_verification"):risk+=30
+            if str(claim.get("importance","")).upper() in {"HIGH","CRITICAL"}:risk+=30
+            if signals.get("contradiction_count",0):risk+=10
+            risk=min(risk,100)
+            priorities.append({
+                "claim_id":claim.get("id",claim.get("claim_id",f"claim_{i+1}")),
+                "claim":text,
+                "priority_score":risk,
+                "priority":"CRITICAL" if risk>=80 else "HIGH" if risk>=50 else "MEDIUM" if risk>=25 else "LOW",
+                "requires_deep_investigation":risk>=50
+            })
+        priorities.sort(key=lambda x:x.get("priority_score",0),reverse=True)
+        return priorities
+
+    def _publication_recommendation(self,level):
+        mapping={
+            "URGENT":{"decision":"HOLD_PUBLICATION","reason":"Urgent investigation is required before publication."},
+            "DEEP":{"decision":"HOLD_FOR_INVESTIGATION","reason":"Deep investigation is required before publication."},
+            "STANDARD":{"decision":"EDITORIAL_REVIEW","reason":"Standard investigation should be completed before publication."},
+            "LIGHT":{"decision":"LIGHT_REVIEW","reason":"A light verification pass is recommended."},
+            "NONE":{"decision":"NORMAL_EDITORIAL_FLOW","reason":"No major investigation requirement was detected."}
+        }
+        return mapping.get(level,mapping["STANDARD"])
+
+    def _contains_terms(self,text,terms):
+        text=str(text or "").lower()
+        return any(term.lower() in text for term in terms)
+
+    def _unique(self,values):
+        result=[];seen=set()
+        for value in values:
+            value=str(value or "").strip()
+            if not value:continue
+            key=value.lower()
+            if key in seen:continue
+            seen.add(key);result.append(value)
+        return result
