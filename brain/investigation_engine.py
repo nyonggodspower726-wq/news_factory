@@ -161,3 +161,79 @@ class InvestigationEngine:
             if key in seen:continue
             seen.add(key);result.append(value)
         return result
+    def status(self):
+        return {
+            "engine":self.name,
+            "version":self.version,
+            "status":"READY"
+        }
+
+    def assess(self,story=None,research=None,claims=None,sources=None):
+        return self.investigate(
+            story=story,
+            research=research,
+            claims=claims,
+            sources=sources
+        )
+
+    def requires_investigation(self,result):
+        if not isinstance(result,dict):
+            return True
+        return result.get("investigation_level") in {"STANDARD","DEEP","URGENT"}
+
+    def critical_claims(self,result):
+        if not isinstance(result,dict):
+            return []
+        claims=result.get("claim_priorities",[])
+        return [
+            claim for claim in claims
+            if isinstance(claim,dict)
+            and claim.get("priority") in {"CRITICAL","HIGH"}
+        ]
+
+    def investigation_summary(self,result):
+        if not isinstance(result,dict):
+            return {
+                "status":"INVALID",
+                "level":"URGENT",
+                "score":100
+            }
+        signals=result.get("signals",{})
+        return {
+            "status":result.get("status","UNKNOWN"),
+            "level":result.get("investigation_level","NONE"),
+            "score":result.get("investigation_score",0),
+            "source_count":signals.get("source_count",0),
+            "primary_source_count":signals.get("primary_source_count",0),
+            "contradictions":signals.get("contradiction_count",0),
+            "research_gaps":signals.get("research_gap_count",0),
+            "allegations":signals.get("allegation_count",0),
+            "verification_required":signals.get("verification_required_count",0)
+        }
+
+
+investigation_engine=InvestigationEngine()
+
+def investigate_story(story=None,research=None,claims=None,sources=None):
+    return investigation_engine.investigate(
+        story=story,
+        research=research,
+        claims=claims,
+        sources=sources
+    )
+
+def investigate(story=None,research=None,claims=None,sources=None):
+    return investigation_engine.investigate(
+        story=story,
+        research=research,
+        claims=claims,
+        sources=sources
+    )
+
+def assess_investigation(story=None,research=None,claims=None,sources=None):
+    return investigation_engine.investigate(
+        story=story,
+        research=research,
+        claims=claims,
+        sources=sources
+        )
