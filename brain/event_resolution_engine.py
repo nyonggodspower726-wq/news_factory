@@ -160,3 +160,49 @@ class EventResolutionEngine:
     def _date_similarity(self,a,b):
         if not a or not b:return 0.0
         return 1.0 if str(a)==str(b) else 0.0
+    def _event_keywords(self,text):
+        words=self._tokens(text)
+        return {w for w in words if w in self.event_words}
+
+    def _unique(self,values):
+        result=[];seen=set()
+        for value in values:
+            if value is None:continue
+            key=str(value).strip().lower()
+            if not key or key in seen:continue
+            seen.add(key);result.append(value)
+        return result
+
+    def compare_events(self,first,second):
+        return self._compare_events(
+            self._normalize_events([first])[0],
+            self._normalize_events([second])[0]
+        )
+
+    def find_related_events(self,events):
+        return self.resolve(events)
+
+    def summarize(self,result):
+        if not isinstance(result,dict):
+            return {"status":"INVALID","event_count":0,"relationship_count":0,"cluster_count":0}
+        return {"status":result.get("status","UNKNOWN"),"event_count":result.get("event_count",0),"relationship_count":len(result.get("relationships",[])),"cluster_count":len(result.get("clusters",[])),"duplicate_groups":len(result.get("duplicate_event_groups",[])),"evolving_events":len(result.get("evolving_events",[]))}
+
+    def status(self):
+        return {"engine":self.name,"version":self.version,"status":"READY"}
+
+
+# =========================================================
+# MODULE HELPERS
+# =========================================================
+
+event_resolution_engine=EventResolutionEngine()
+
+def resolve_events(events):
+    return event_resolution_engine.resolve(events)
+
+def compare_events(first,second):
+    return event_resolution_engine.compare_events(first,second)
+
+if __name__=="__main__":
+    example=[{"event_id":"event_1","title":"Officials announce investigation","description":"Officials announced a new investigation.","date":"2026-08-11","entities":{"people":["John Doe"],"organizations":["Agency"],"locations":["Lagos"]}},{"event_id":"event_2","title":"Agency confirms investigation","description":"The agency confirmed the investigation in Lagos.","date":"2026-08-11","entities":{"people":["John Doe"],"organizations":["Agency"],"locations":["Lagos"]}}]
+    print(resolve_events(example))
