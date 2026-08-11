@@ -703,3 +703,281 @@ class BrainPipeline:
                 "error":
                     str(error)
                 }
+        # =================================================
+        # 7. STORY SYNTHESIS
+        # =================================================
+
+        logger.info("7/15 Story synthesis")
+
+        try:
+
+            synthesis = (
+                self.story_synthesis.synthesize(
+                    sources=sources,
+                    evidence=package.get(
+                        "claim_analysis",
+                        {}
+                    ),
+                    metadata={
+                        "topic": topic,
+                        "story": package["story"],
+                        "verification":
+                            package["verification"],
+                        "corroboration":
+                            package.get(
+                                "corroboration",
+                                {}
+                            )
+                    }
+                )
+            )
+
+            package["synthesis"] = synthesis
+
+            if isinstance(
+                synthesis,
+                dict
+            ):
+
+                package["story_model"] = synthesis
+
+        except Exception as error:
+
+            logger.exception(
+                "Story synthesis failed: %s",
+                error
+            )
+
+            package["synthesis"] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 8. SIGNIFICANCE
+        # =================================================
+
+        logger.info("8/15 Significance")
+
+        try:
+
+            significance = (
+                self.significance.evaluate(
+                    package["story"]
+                )
+            )
+
+            package["significance"] = significance
+
+        except Exception as error:
+
+            logger.exception(
+                "Significance failed: %s",
+                error
+            )
+
+            package["significance"] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 9. EDITORIAL ANGLE
+        # =================================================
+
+        logger.info("9/15 Editorial angle")
+
+        try:
+
+            angles = (
+                self.angle_finder.find_angles(
+                    package["story"],
+                    package["significance"]
+                )
+            )
+
+            package["angles"] = angles
+
+        except Exception as error:
+
+            logger.exception(
+                "Angle finder failed: %s",
+                error
+            )
+
+            package["angles"] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 10. READER PSYCHOLOGY
+        # =================================================
+
+        logger.info("10/15 Reader psychology")
+
+        try:
+
+            psychology = (
+                self.reader_psychology.analyze(
+                    story=package["story"],
+                    article=package.get(
+                        "article_plan",
+                        {}
+                    ),
+                    angle=package.get(
+                        "angles",
+                        {}
+                    )
+                )
+            )
+
+            package["psychology"] = psychology
+
+        except Exception as error:
+
+            logger.exception(
+                "Reader psychology failed: %s",
+                error
+            )
+
+            package["psychology"] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 11. NARRATIVE
+        # =================================================
+
+        logger.info("11/15 Narrative")
+
+        try:
+
+            narrative = (
+                self.narrative.build_blueprint(
+                    story=package["story"],
+                    psychology=package[
+                        "psychology"
+                    ],
+                    audience=package.get(
+                        "reader_intelligence",
+                        {}
+                    )
+                )
+            )
+
+            package["narrative"] = narrative
+
+        except Exception as error:
+
+            logger.exception(
+                "Narrative failed: %s",
+                error
+            )
+
+            package["narrative"] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 12. JOURNALIST
+        # =================================================
+
+        logger.info("12/15 Journalist")
+
+        try:
+
+            article_plan = (
+                self.journalist.create_article_plan(
+                    package
+                )
+            )
+
+            package["article_plan"] = article_plan
+
+        except Exception as error:
+
+            logger.exception(
+                "Journalist failed: %s",
+                error
+            )
+
+            package["article_plan"] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 13. ENGAGEMENT
+        # =================================================
+
+        logger.info("13/15 Engagement")
+
+        try:
+
+            engagement = (
+                self.engagement.analyze(
+                    package["story"]
+                )
+            )
+
+            package["engagement"] = engagement
+
+        except Exception as error:
+
+            logger.exception(
+                "Engagement failed: %s",
+                error
+            )
+
+            package["engagement"] = {
+                "status": "ERROR",
+                "error": str(error)
+            }
+
+        # =================================================
+        # 14. HEADLINE
+        # =================================================
+
+        logger.info("14/15 Headline")
+
+        try:
+
+            headline_result = (
+                self.headline.analyze(
+                    package["story"]
+                )
+            )
+
+            package["headline"] = headline_result
+
+            if isinstance(
+                headline_result,
+                dict
+            ):
+
+                headline = (
+                    headline_result.get(
+                        "recommended_headline"
+                    )
+                )
+
+                if headline:
+
+                    package[
+                        "story"
+                    ]["headline"] = headline
+
+        except Exception as error:
+
+            logger.exception(
+                "Headline failed: %s",
+                error
+            )
+
+            package["headline"] = {
+                "status": "ERROR",
+                "error": str(error)
+                    }
