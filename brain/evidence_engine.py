@@ -59,3 +59,81 @@ class EvidenceEngine:
     def _source_relationship(self,claim,source):
         claim_text=claim["text"].lower();source_text=(str(source.get("title",""))+" "+str(source.get("text",""))).lower()
         if not source_text:return "NEUTRAL"
+        ct=set(self._tokens(claim_text));st=set(self._tokens(source_text))
+        if not ct:return "NEUTRAL"
+        ratio=len(ct&st)/len(ct)
+        if ratio<.20:return "NEUTRAL"
+        for negative,positive in [("denied","confirmed"),("false","true"),("rejected","approved"),("disputed","confirmed")]:
+            if negative in source_text and positive in claim_text:return "OPPOSES"
+        return "SUPPORTS"
+
+    def _directness_score(self,claim,supporting):
+        if not supporting:return 0
+        ct=set(self._tokens(claim["text"]));best=0
+        for s in supporting:
+            st=set(self._tokens(str(s.get("title",""))+" "+str(s.get("text",""))))
+            if not st:continue
+            score=int(len(ct&st)/max(len(ct),1)*100)
+            if s.get("primary"):score+=15
+            best=max(best,min(score,100))
+        return best
+
+    def _source_strength(self,sources):
+        if not sources:return 0
+        scores=[]
+        for s in sources:
+            value=self._number(s.get("quality_score",50),50);typ=s.get("type","UNKNOWN")
+            if typ in self.strong_source_types:value+=10
+            if typ in self.weak_source_types:value-=20
+            if s.get("primary"):value+=20
+            scores.append(max(0,min(value,100)))
+        return int(sum(scores)/len(scores))
+
+    def _independence_score(self,sources):
+        if not sources:return 0
+        domains={str(s.get("domain","")).lower().strip() for s in sources if s.get("domain")}
+        explicit=sum(1 for s in sources if s.get("independent"))
+        return min(100,min(len(domains)*20,60)+min(explicit*15,40))
+
+    def _primary_score(self,sources):
+        if not sources:return 0
+        primary=sum(1 for s in sources if s.get("primary"))
+        official=sum(1 for s in sources if s.get("official"))
+        return min(100,primary*60+official*40)
+
+    def _freshness_score(self,sources):
+        if not sources:return 0
+        return 80 if any(s.get("published_at") for s in sources) else 50
+
+    def _contradiction_score(self,supporting,opposing):
+        if not opposing:return 0
+        return min(100,len(opposing)*40)
+
+    def _attribution_score(self,claim):
+        text=claim.get("text","").lower()
+        return 80 if any(w in text for w in self.attribution_words) else 40
+
+    def _uncertainty_score(self,claim):
+        text=claim.get("text","").lower()
+        return min(100,sum(15 for w in self.uncertainty_words if w in text))
+
+    def _classify_claim(self,claim):
+        supplied=str(claim.get("type","")).upper()
+        if supplied in self.claim_types:return supplied
+        text=claim.get("text","").lower()
+        if any(w in text for w in ("allegedly","alleged","claims","accused")):return "ALLEGATION"
+        if any(w in text for w in ("may","might","could","expected","likely")):return "PREDICTION"
+        if any(w in text for w in ("i think","in my view","should","best")):return "OPINION"
+        return "FACT"
+
+    def _source_names(self,sources):
+        return [{"id":s.get("id"),"name":s.get("name"),"domain":s.get("domain"),"url":s.get("url")} for s in sources]
+
+    def _recommended_treatment(self,ctype,score,contradiction):
+        if ctype=="ALLEGATION":return "ATTRIBUTED_ALLEGATION"
+        if ctype=="PREDICTION":return "LABEL_AS_PREDICTION"
+        if ctype in {"OPINION","ANALYSIS"}:return "LABEL_OR_ATTRIBUTE"
+        if contradiction>=60:return "HOLD_AND_VERIFY"
+        if score>=80:return "PUBLISH_IF_EDITOR_APPROVES"
+        if score>=60:return "USE_WITH_CONTEXT"
+        return "VERIFY_BEFORE_PUBLICATION"
