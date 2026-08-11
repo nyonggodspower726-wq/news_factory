@@ -1084,3 +1084,223 @@ class AngleEngine:
             ValueError
         ):
             return 0
+    def _headline_direction(
+        self,
+        angle_type: str,
+        story: Dict[str, Any]
+    ) -> str:
+
+        directions = {
+            "BREAKING_DEVELOPMENT":
+                "State the newest confirmed development clearly.",
+            "WHY_IT_MATTERS":
+                "Emphasize the verified significance.",
+            "WHAT_CHANGED":
+                "Highlight the before-and-after change.",
+            "WHAT_HAPPENS_NEXT":
+                "Focus on confirmed next steps.",
+            "IMPACT":
+                "Highlight the verified effect on people or organizations.",
+            "CONSEQUENCES":
+                "Show documented consequences without speculation.",
+            "TIMELINE":
+                "Frame the headline around the latest development in sequence.",
+            "EXPLAINER":
+                "Make the core issue understandable.",
+            "CONTEXT":
+                "Connect the current event to necessary background.",
+            "HUMAN_IMPACT":
+                "Highlight verified effects on people.",
+            "BUSINESS_IMPACT":
+                "Highlight the verified business or economic effect.",
+            "POLITICAL_IMPACT":
+                "Identify the political development accurately.",
+            "TECHNOLOGY_IMPACT":
+                "Explain the verified practical technology impact.",
+            "PUBLIC_REACTION":
+                "Use verified public or institutional reaction.",
+            "CONTROVERSY":
+                "Identify the documented dispute fairly.",
+            "UNANSWERED_QUESTIONS":
+                "Highlight important unresolved issues.",
+            "DATA_ANGLE":
+                "Lead with the strongest verified numbers.",
+            "COMPARISON":
+                "Use a factual comparison to clarify the story."
+        }
+
+        return directions.get(
+            angle_type,
+            "State the central confirmed development clearly."
+        )
+
+    def _deduplicate(
+        self,
+        candidates: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        result = []
+        seen = set()
+
+        for candidate in candidates:
+
+            if not isinstance(
+                candidate,
+                dict
+            ):
+                continue
+
+            key = str(
+                candidate.get(
+                    "angle_type",
+                    ""
+                )
+            ).upper()
+
+            if not key or key in seen:
+                continue
+
+            seen.add(key)
+            result.append(candidate)
+
+        return result
+
+    def _recommendation(
+        self,
+        candidates: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+
+        if not candidates:
+
+            return {
+                "decision": "NO_CLEAR_ANGLE",
+                "message":
+                    "No sufficiently supported editorial angle was identified.",
+                "recommended_action":
+                    "Gather additional evidence."
+            }
+
+        primary = candidates[0]
+        score = primary.get(
+            "angle_score",
+            0
+        )
+        confidence = primary.get(
+            "confidence",
+            "LOW"
+        )
+
+        if confidence == "LOW":
+            decision = "HUMAN_REVIEW_REQUIRED"
+
+        elif score < 60:
+            decision = "WEAK_ANGLE"
+
+        else:
+            decision = "ANGLE_RECOMMENDED"
+
+        return {
+            "decision": decision,
+            "recommended_angle":
+                primary.get(
+                    "angle_type"
+                ),
+            "score": score,
+            "confidence": confidence
+        }
+
+
+# =========================================================
+# PIPELINE COMPATIBILITY WRAPPER
+# =========================================================
+
+class AngleFinder:
+
+    def __init__(self):
+        self.engine = AngleEngine()
+        self.name = self.engine.name
+        self.version = self.engine.version
+
+    def find_angles(
+        self,
+        story: Dict[str, Any],
+        significance: Dict[str, Any] = None,
+        related_stories: List[Dict[str, Any]] = None,
+        evidence: List[Dict[str, Any]] = None,
+        trend_data: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+
+        story = (
+            story
+            if isinstance(story, dict)
+            else {}
+        )
+
+        significance = (
+            significance
+            if isinstance(significance, dict)
+            else {}
+        )
+
+        if significance:
+            story = dict(story)
+            story["significance"] = significance
+
+        return self.engine.analyze(
+            story=story,
+            related_stories=related_stories or [],
+            evidence=evidence or [],
+            trend_data=trend_data or {}
+        )
+
+    def analyze(
+        self,
+        story: Dict[str, Any],
+        **kwargs
+    ) -> Dict[str, Any]:
+
+        return self.find_angles(
+            story,
+            **kwargs
+        )
+
+
+angle_finder = AngleFinder()
+
+
+def find_angles(
+    story: Dict[str, Any],
+    significance: Dict[str, Any] = None
+) -> Dict[str, Any]:
+
+    return angle_finder.find_angles(
+        story,
+        significance
+    )
+
+
+def analyze_angles(
+    story: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    return angle_finder.find_angles(
+        story
+    )
+
+
+if __name__ == "__main__":
+
+    test_story = {
+        "title": "Officials announce a new development",
+        "content": (
+            "Officials announced a new development "
+            "in the investigation. "
+            "The investigation will continue."
+        )
+    }
+
+    result = find_angles(
+        test_story
+    )
+
+    print(result)
