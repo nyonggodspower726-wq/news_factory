@@ -4,8 +4,8 @@ from typing import Any,Dict,Optional
 from article_engine import ArticleEngine
 from seo_engine import SEOEngine
 from media.media_manager import MediaManager
-from Publishing.website_publisher import WebsitePublisher
-from Publishing.platform_router import PlatformRouter
+from publishing.website_publisher import WebsitePublisher
+from publishing.platform_router import PlatformRouter
 
 logger=logging.getLogger("NewsFactory.PublicationOrchestrator")
 
