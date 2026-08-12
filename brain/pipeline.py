@@ -1,32 +1,5 @@
-"""
-AI NEWS FACTORY
-CENTRAL BRAIN PIPELINE
-
-All brain engines are wired here.
-
-main.py and scheduler.py communicate with this
-pipeline instead of calling individual brain engines.
-
-NVIDIA AI
----------
-Four NVIDIA API keys are loaded from Railway variables:
-
-NVIDIA_API_KEY_1
-NVIDIA_API_KEY_2
-NVIDIA_API_KEY_3
-NVIDIA_API_KEY_4
-
-The NVIDIA client automatically fails over from one key
-to the next when a request fails.
-"""
-
-import logging
-import os
-from typing import Any, Dict, List
-
-import requests
-
-
+import inspect,logging,os,requests
+from typing import Any,Dict,List,Optional
 from brain.claim_engine import ClaimEngine
 from brain.corroboration_engine import CorroborationEngine
 from brain.fact_checker import FactChecker
@@ -34,7 +7,6 @@ from brain.story_synthesis_engine import StorySynthesisEngine
 from brain.journalist_engine import JournalistEngine
 from brain.headline_engine import HeadlineEngine
 from brain.editor_engine import EditorEngine
-
 from brain.story_analyzer import StoryAnalyzer
 from brain.source_intelligence_engine import SourceIntelligenceEngine
 from brain.source_graph_engine import SourceGraphEngine
@@ -43,1291 +15,198 @@ from brain.angle_finder import AngleFinder
 from brain.reader_psychology_engine import ReaderPsychologyEngine
 from brain.engagement_engine import EngagementEngine
 from brain.narrative_engine import NarrativeEngine
-
-
-logger = logging.getLogger(
-    "NewsFactory.BrainPipeline"
-)
-
-
-# =========================================================
-# NVIDIA CENTRAL AI CLIENT
-# =========================================================
+from brain.event_resolution_engine import EventResolutionEngine
+from brain.evidence_engine import EvidenceEngine
+from brain.investigation_engine import InvestigationEngine
+from brain.misinformation_engine import MisinformationEngine
+from brain.source_verification import SourceVerificationEngine
+from brain.story_cluster import StoryCluster
+from brain.psychology_engine import PsychologyEngine
+from factory_pipeline import FactoryPipeline
+logger=logging.getLogger("NewsFactory.BrainPipeline")
 
 class NvidiaBrainClient:
-
-    def __init__(
-        self,
-        model: str = "meta/llama-3.3-70b-instruct",
-        base_url: str = "https://integrate.api.nvidia.com/v1"
-    ):
-
-        self.name = "NVIDIA Brain Client"
-        self.version = "1.0.0"
-
-        self.model = model
-
-        self.base_url = (
-            base_url.rstrip("/")
-        )
-
-        # =================================================
-        # LOAD FOUR NVIDIA KEYS FROM RAILWAY
-        # =================================================
-
-        self.api_keys = [
-
-            os.getenv(
-                "NVIDIA_API_KEY_1",
-                ""
-            ).strip(),
-
-            os.getenv(
-                "NVIDIA_API_KEY_2",
-                ""
-            ).strip(),
-
-            os.getenv(
-                "NVIDIA_API_KEY_3",
-                ""
-            ).strip(),
-
-            os.getenv(
-                "NVIDIA_API_KEY_4",
-                ""
-            ).strip()
-        ]
-
-        # Remove empty variables.
-        self.api_keys = [
-            key
-            for key in self.api_keys
-            if key
-        ]
-
-        self.current_key_index = 0
-
-        self.timeout = 60
-
-        logger.info(
-            "NVIDIA client initialized with %s configured key(s).",
-            len(self.api_keys)
-        )
-
-    # =====================================================
-    # STATUS
-    # =====================================================
-
-    def status(
-        self
-    ) -> Dict[str, Any]:
-
-        return {
-
-            "provider":
-                "NVIDIA",
-
-            "client":
-                self.name,
-
-            "version":
-                self.version,
-
-            "model":
-                self.model,
-
-            "configured_keys":
-                len(
-                    self.api_keys
-                ),
-
-            "failover_enabled":
-                True,
-
-            "current_key_slot":
-                (
-                    self.current_key_index + 1
-                    if self.api_keys
-                    else None
-                )
-        }
-
-    # =====================================================
-    # CHAT
-    # =====================================================
-
-    def chat(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: float = 0.2,
-        max_tokens: int = 1500
-    ) -> str:
-
-        if not self.api_keys:
-
-            raise RuntimeError(
-                "No NVIDIA API keys found. "
-                "Configure NVIDIA_API_KEY_1 through "
-                "NVIDIA_API_KEY_4 in Railway."
-            )
-
-        last_error = None
-
-        total_keys = len(
-            self.api_keys
-        )
-
-        for attempt in range(
-            total_keys
-        ):
-
-            key_index = (
-                self.current_key_index
-                + attempt
-            ) % total_keys
-
-            api_key = self.api_keys[
-                key_index
-            ]
-
+    def __init__(self,model:str="meta/llama-3.3-70b-instruct",base_url:str="https://integrate.api.nvidia.com/v1"):
+        self.name="NVIDIA Brain Client";self.version="2.0.0";self.model=model;self.base_url=base_url.rstrip("/")
+        self.api_keys=[os.getenv("NVIDIA_API_KEY_1","").strip(),os.getenv("NVIDIA_API_KEY_2","").strip(),os.getenv("NVIDIA_API_KEY_3","").strip(),os.getenv("NVIDIA_API_KEY_4","").strip()]
+        self.api_keys=[x for x in self.api_keys if x];self.current_key_index=0;self.timeout=int(os.getenv("NVIDIA_TIMEOUT","60"))
+    def status(self)->Dict[str,Any]:
+        return {"provider":"NVIDIA","client":self.name,"version":self.version,"model":self.model,"configured_keys":len(self.api_keys),"failover_enabled":True,"current_key_slot":self.current_key_index+1 if self.api_keys else None}
+    def chat(self,messages:List[Dict[str,str]],temperature:float=0.2,max_tokens:int=1500)->str:
+        if not self.api_keys: raise RuntimeError("No NVIDIA API keys configured.")
+        last_error=None;total=len(self.api_keys)
+        for attempt in range(total):
+            index=(self.current_key_index+attempt)%total;key=self.api_keys[index]
             try:
-
-                logger.info(
-                    "NVIDIA AI request using key slot %s/%s.",
-                    key_index + 1,
-                    total_keys
-                )
-
-                result = self._request(
-                    api_key=api_key,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                )
-
-                self.current_key_index = (
-                    key_index
-                )
-
-                return result
-
-            except Exception as error:
-
-                last_error = error
-
-                logger.warning(
-                    "NVIDIA key slot %s failed: %s",
-                    key_index + 1,
-                    error
-                )
-
-                continue
-
-        raise RuntimeError(
-            "All NVIDIA API keys failed. "
-            f"Last error: {last_error}"
-        )
-
-    # =====================================================
-    # NVIDIA REQUEST
-    # =====================================================
-
-    def _request(
-        self,
-        api_key: str,
-        messages: List[Dict[str, str]],
-        temperature: float,
-        max_tokens: int
-    ) -> str:
-
-        url = (
-            self.base_url
-            + "/chat/completions"
-        )
-
-        headers = {
-
-            "Authorization":
-                f"Bearer {api_key}",
-
-            "Content-Type":
-                "application/json",
-
-            "Accept":
-                "application/json"
-        }
-
-        payload = {
-
-            "model":
-                self.model,
-
-            "messages":
-                messages,
-
-            "temperature":
-                temperature,
-
-            "max_tokens":
-                max_tokens
-        }
-
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=self.timeout
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        choices = data.get(
-            "choices",
-            []
-        )
-
-        if not choices:
-
-            raise RuntimeError(
-                "NVIDIA API returned no choices."
-            )
-
-        message = choices[0].get(
-            "message",
-            {}
-        )
-
-        content = message.get(
-            "content"
-        )
-
-        if not content:
-
-            raise RuntimeError(
-                "NVIDIA API returned empty content."
-            )
-
-        return str(
-            content
-        ).strip()
-
-
-# =========================================================
-# CENTRAL BRAIN PIPELINE
-# =========================================================
+                result=self._request(key,messages,temperature,max_tokens);self.current_key_index=index;return result
+            except Exception as exc:
+                last_error=exc;logger.warning("NVIDIA key slot %s/%s failed: %s",index+1,total,exc)
+        raise RuntimeError(f"All NVIDIA API keys failed. Last error: {last_error}")
+    def _request(self,api_key:str,messages:List[Dict[str,str]],temperature:float,max_tokens:int)->str:
+        response=requests.post(self.base_url+"/chat/completions",headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json","Accept":"application/json"},json={"model":self.model,"messages":messages,"temperature":temperature,"max_tokens":max_tokens},timeout=self.timeout)
+        response.raise_for_status();data=response.json();choices=data.get("choices",[])
+        if not choices: raise RuntimeError("NVIDIA API returned no choices.")
+        content=choices[0].get("message",{}).get("content")
+        if not content: raise RuntimeError("NVIDIA API returned empty content.")
+        return str(content).strip()
 
 class BrainPipeline:
-
     def __init__(self):
-
-        logger.info(
-            "Initializing central brain..."
-        )
-
-        # =================================================
-        # CENTRAL NVIDIA AI
-        # =================================================
-
-        self.ai = NvidiaBrainClient()
-
-        # =================================================
-        # BRAIN ENGINES
-        # =================================================
-
-        self.story_analyzer = (
-            StoryAnalyzer()
-        )
-
-        self.source_intelligence = (
-            SourceIntelligenceEngine()
-        )
-
-        self.source_graph = (
-            SourceGraphEngine()
-        )
-
-        self.claim_engine = (
-            ClaimEngine()
-        )
-
-        self.corroboration = (
-            CorroborationEngine()
-        )
-
-        self.fact_checker = (
-            FactChecker()
-        )
-
-        self.story_synthesis = (
-            StorySynthesisEngine()
-        )
-
-        self.significance = (
-            SignificanceEngine()
-        )
-
-        self.angle_finder = (
-            AngleFinder()
-        )
-
-        self.reader_psychology = (
-            ReaderPsychologyEngine()
-        )
-
-        self.engagement = (
-            EngagementEngine()
-        )
-
-        self.narrative = (
-            NarrativeEngine()
-        )
-
-        self.journalist = (
-            JournalistEngine()
-        )
-
-        self.headline = (
-            HeadlineEngine()
-        )
-
-        self.editor = (
-            EditorEngine()
-        )
-
-        logger.info(
-            "Central brain initialized."
-        )
-
-    # =====================================================
-    # STATUS
-    # =====================================================
-
-    def status(
-        self
-    ) -> Dict[str, Any]:
-
-        loaded_brains = [
-
-            "story_analyzer",
-            "source_intelligence",
-            "claim_engine",
-            "source_graph",
-            "corroboration",
-            "fact_checker",
-            "story_synthesis",
-            "significance",
-            "angle_finder",
-            "reader_psychology",
-            "engagement",
-            "narrative",
-            "journalist",
-            "headline",
-            "editor"
-        ]
-
-        brains = {
-            brain_name: True
-            for brain_name
-            in loaded_brains
-        }
-
-        return {
-
-            "status":
-                "READY",
-
-            "engine":
-                "BrainPipeline",
-
-            "version":
-                "1.0.0",
-
-            "initialized":
-                True,
-
-            "total_brains":
-                len(
-                    loaded_brains
-                ),
-
-            "loaded_brains":
-                loaded_brains,
-
-            "brains":
-                brains,
-
-            "engines":
-                brains,
-
-            "ai_provider":
-                self.ai.status()
-        }
-
-    # =====================================================
-    # MAIN PIPELINE
-    # =====================================================
-
-    def run(
-        self,
-        sources: List[Dict[str, Any]],
-        story: Dict[str, Any] = None,
-        topic: str = ""
-    ) -> Dict[str, Any]:
-
-        story = (
-            story
-            if isinstance(
-                story,
-                dict
-            )
-            else {}
-        )
-
-        sources = (
-            sources
-            if isinstance(
-                sources,
-                list
-            )
-            else []
-        )
-
-        logger.info("=" * 60)
-        logger.info("BRAIN PIPELINE STARTED")
-        logger.info("=" * 60)
-
-        package = {
-
-            "story":
-                story,
-
-            "sources":
-                sources,
-
-            "topic":
-                topic,
-
-            "claims":
-                [],
-
-            "claim_analysis":
-                {},
-
-            "evidence":
-                {},
-
-            "verification":
-                {},
-
-            "corroboration":
-                {},
-
-            "source_graph":
-                {},
-
-            "cluster":
-                {},
-
-            "significance":
-                {},
-
-            "angles":
-                {},
-
-            "psychology":
-                {},
-
-            "article_plan":
-                {}
-        }
-
-        # Central AI available to every downstream engine.
-        package["ai"] = self.ai
-
-        # =================================================
-        # 1. STORY ANALYSIS
-        # =================================================
-
-        logger.info(
-            "1/15 Story analysis"
-        )
-
-        try:
-
-            story_analysis = (
-                self.story_analyzer.analyze(
-                    story
-                )
-            )
-
-            package[
-                "story_analysis"
-            ] = story_analysis
-
-            if isinstance(
-                story_analysis,
-                dict
-            ):
-
-                package[
-                    "story"
-                ].update(
-                    story_analysis
-                )
-
-        except Exception as error:
-
-            logger.exception(
-                "Story analysis failed: %s",
-                error
-            )
-
-            package[
-                "story_analysis"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 2. SOURCE INTELLIGENCE
-        # =================================================
-
-        logger.info(
-            "2/15 Source intelligence"
-        )
-
-        try:
-
-            source_intelligence = (
-                self.source_intelligence.analyze(
-                    sources
-                )
-            )
-
-            package[
-                "source_intelligence"
-            ] = source_intelligence
-
-        except Exception as error:
-
-            logger.exception(
-                "Source intelligence failed: %s",
-                error
-            )
-
-            package[
-                "source_intelligence"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 3. CLAIM ANALYSIS
-        # =================================================
-
-        logger.info(
-            "3/15 Claim analysis"
-        )
-
-        try:
-
-            claim_analysis = (
-                self.claim_engine.analyze(
-                    package["story"]
-                )
-            )
-
-            package[
-                "claim_analysis"
-            ] = claim_analysis
-
-            if isinstance(
-                claim_analysis,
-                dict
-            ):
-
-                package[
-                    "claims"
-                ] = claim_analysis.get(
-                    "claims",
-                    []
-                )
-
-        except Exception as error:
-
-            logger.exception(
-                "Claim analysis failed: %s",
-                error
-            )
-
-            package[
-                "claim_analysis"
-            ] = {
-                "status": "ERROR",
-                "error": str(error),
-                "claims": []
-            }
-
-            package[
-                "claims"
-            ] = []
-        # =================================================
-        # 4. SOURCE GRAPH
-        # =================================================
-
-        logger.info(
-            "4/15 Source graph"
-        )
-
-        try:
-
-            source_graph = (
-                self.source_graph.build_graph(
-
-                    sources=sources,
-
-                    claims=package[
-                        "claims"
-                    ],
-
-                    entities=package[
-                        "story"
-                    ].get(
-                        "entities",
-                        []
-                    )
-                )
-            )
-
-            package[
-                "source_graph"
-            ] = source_graph
-
-        except Exception as error:
-
-            logger.exception(
-                "Source graph failed: %s",
-                error
-            )
-
-            package[
-                "source_graph"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 5. CORROBORATION
-        # =================================================
-
-        logger.info(
-            "5/15 Corroboration"
-        )
-
-        try:
-
-            corroboration = (
-                self.corroboration.analyze(
-
-                    sources=sources,
-
-                    claims=package[
-                        "claims"
-                    ]
-                )
-            )
-
-            package[
-                "corroboration"
-            ] = corroboration
-
-        except Exception as error:
-
-            logger.exception(
-                "Corroboration failed: %s",
-                error
-            )
-
-            package[
-                "corroboration"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 6. FACT CHECKING
-        # =================================================
-
-        logger.info(
-            "6/15 Fact checking"
-        )
-
-        try:
-
-            verification = (
-                self.fact_checker.verify_story(
-
-                    story=package[
-                        "story"
-                    ],
-
-                    sources=sources
-                )
-            )
-
-            package[
-                "verification"
-            ] = verification
-
-        except Exception as error:
-
-            logger.exception(
-                "Fact checking failed: %s",
-                error
-            )
-
-            package[
-                "verification"
-            ] = {
-
-                "publication_status":
-                    "HUMAN_REVIEW_REQUIRED",
-
-                "status":
-                    "ERROR",
-
-                "error":
-                    str(error)
-            }
-
-
-        # =================================================
-        # 7. STORY SYNTHESIS
-        # =================================================
-
-        logger.info(
-            "7/15 Story synthesis"
-        )
-
-        try:
-
-            synthesis = (
-                self.story_synthesis.synthesize(
-
-                    sources=sources,
-
-                    evidence=package.get(
-                        "claim_analysis",
-                        {}
-                    ),
-
-                    metadata={
-
-                        "topic":
-                            topic,
-
-                        "story":
-                            package[
-                                "story"
-                            ],
-
-                        "verification":
-                            package[
-                                "verification"
-                            ],
-
-                        "corroboration":
-                            package.get(
-                                "corroboration",
-                                {}
-                            ),
-
-                        "source_graph":
-                            package.get(
-                                "source_graph",
-                                {}
-                            ),
-
-                        "claims":
-                            package.get(
-                                "claims",
-                                []
-                            )
-                    }
-                )
-            )
-
-            package[
-                "synthesis"
-            ] = synthesis
-
-            if isinstance(
-                synthesis,
-                dict
-            ):
-
-                package[
-                    "story_model"
-                ] = synthesis
-
-        except Exception as error:
-
-            logger.exception(
-                "Story synthesis failed: %s",
-                error
-            )
-
-            package[
-                "synthesis"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 8. SIGNIFICANCE
-        # =================================================
-
-        logger.info(
-            "8/15 Significance"
-        )
-
-        try:
-
-            significance = (
-                self.significance.evaluate(
-                    package[
-                        "story"
-                    ]
-                )
-            )
-
-            package[
-                "significance"
-            ] = significance
-
-        except Exception as error:
-
-            logger.exception(
-                "Significance failed: %s",
-                error
-            )
-
-            package[
-                "significance"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 9. EDITORIAL ANGLE
-        # =================================================
-
-        logger.info(
-            "9/15 Editorial angle"
-        )
-
-        try:
-
-            angles = (
-                self.angle_finder.find_angles(
-
-                    package[
-                        "story"
-                    ],
-
-                    package[
-                        "significance"
-                    ]
-                )
-            )
-
-            package[
-                "angles"
-            ] = angles
-
-        except Exception as error:
-
-            logger.exception(
-                "Angle finder failed: %s",
-                error
-            )
-
-            package[
-                "angles"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 10. READER PSYCHOLOGY
-        # =================================================
-
-        logger.info(
-            "10/15 Reader psychology"
-        )
-
-        try:
-
-            psychology = (
-                self.reader_psychology.analyze(
-
-                    story=package[
-                        "story"
-                    ],
-
-                    article=package.get(
-                        "article_plan",
-                        {}
-                    ),
-
-                    angle=package.get(
-                        "angles",
-                        {}
-                    )
-                )
-            )
-
-            package[
-                "psychology"
-            ] = psychology
-
-        except Exception as error:
-
-            logger.exception(
-                "Reader psychology failed: %s",
-                error
-            )
-
-            package[
-                "psychology"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 11. NARRATIVE
-        # =================================================
-
-        logger.info(
-            "11/15 Narrative"
-        )
-
-        try:
-
-            narrative = (
-                self.narrative.build_blueprint(
-
-                    story=package[
-                        "story"
-                    ],
-
-                    psychology=package[
-                        "psychology"
-                    ],
-
-                    audience=package.get(
-                        "reader_intelligence",
-                        {}
-                    )
-                )
-            )
-
-            package[
-                "narrative"
-            ] = narrative
-
-        except Exception as error:
-
-            logger.exception(
-                "Narrative failed: %s",
-                error
-            )
-
-            package[
-                "narrative"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-        # =================================================
-        # 12. JOURNALIST
-        # =================================================
-
-        logger.info(
-            "12/15 Journalist"
-        )
-
-        try:
-
-            article_plan = (
-                self.journalist.create_article_plan(
-                    package
-                )
-            )
-
-            package[
-                "article_plan"
-            ] = article_plan
-
-        except Exception as error:
-
-            logger.exception(
-                "Journalist failed: %s",
-                error
-            )
-
-            package[
-                "article_plan"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 13. ENGAGEMENT
-        # =================================================
-
-        logger.info(
-            "13/15 Engagement"
-        )
-
-        try:
-
-            engagement = (
-                self.engagement.analyze(
-                    package[
-                        "story"
-                    ]
-                )
-            )
-
-            package[
-                "engagement"
-            ] = engagement
-
-        except Exception as error:
-
-            logger.exception(
-                "Engagement failed: %s",
-                error
-            )
-
-            package[
-                "engagement"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 14. HEADLINE
-        # =================================================
-
-        logger.info(
-            "14/15 Headline"
-        )
-
-        try:
-
-            headline_result = (
-                self.headline.analyze(
-                    package[
-                        "story"
-                    ]
-                )
-            )
-
-            package[
-                "headline"
-            ] = headline_result
-
-            if isinstance(
-                headline_result,
-                dict
-            ):
-
-                headline = (
-                    headline_result.get(
-                        "recommended_headline"
-                    )
-                )
-
-                if headline:
-
-                    package[
-                        "story"
-                    ][
-                        "headline"
-                    ] = headline
-
-        except Exception as error:
-
-            logger.exception(
-                "Headline failed: %s",
-                error
-            )
-
-            package[
-                "headline"
-            ] = {
-                "status": "ERROR",
-                "error": str(error)
-            }
-
-
-        # =================================================
-        # 15. FINAL EDITOR
-        # =================================================
-
-        logger.info(
-            "15/15 Final editorial gate"
-        )
-
-        try:
-
-            editorial = (
-                self.editor.review(
-
-                    article_plan=package[
-                        "article_plan"
-                    ],
-
-                    psychology=package[
-                        "psychology"
-                    ],
-
-                    verification=package[
-                        "verification"
-                    ],
-
-                    cluster=package.get(
-                        "cluster",
-                        {}
-                    )
-                )
-            )
-
-            package[
-                "editorial"
-            ] = editorial
-
-        except Exception as error:
-
-            logger.exception(
-                "Editor failed: %s",
-                error
-            )
-
-            package[
-                "editorial"
-            ] = {
-
-                "decision":
-                    "NEEDS_REVISION",
-
-                "publication_gate":
-                    False,
-
-                "error":
-                    str(error)
-            }
-
-
-        # =================================================
-        # FINAL RESULT
-        # =================================================
-
-        editorial = package.get(
-            "editorial",
-            {}
-        )
-
-        decision = editorial.get(
-            "decision",
-            "NEEDS_REVISION"
-        )
-
-        package[
-            "pipeline_status"
-        ] = decision
-
-        package[
-            "publication_ready"
-        ] = (
-            decision == "APPROVED"
-        )
-
-        logger.info(
-            "=" * 60
-        )
-
-        logger.info(
-            "BRAIN PIPELINE COMPLETE"
-        )
-
-        logger.info(
-            "Decision: %s",
-            decision
-        )
-
-        logger.info(
-            "=" * 60
-        )
-
+        logger.info("Initializing central brain...")
+        self.ai=NvidiaBrainClient()
+        self.story_analyzer=StoryAnalyzer();self.source_intelligence=SourceIntelligenceEngine();self.source_verification=SourceVerificationEngine();self.story_cluster=StoryCluster();self.event_resolution=EventResolutionEngine()
+        self.claim_engine=ClaimEngine();self.evidence=EvidenceEngine();self.source_graph=SourceGraphEngine();self.corroboration=CorroborationEngine();self.fact_checker=FactChecker();self.investigation=InvestigationEngine();self.misinformation=MisinformationEngine()
+        self.story_synthesis=StorySynthesisEngine();self.significance=SignificanceEngine();self.angle_finder=AngleFinder()
+        self.reader_psychology=ReaderPsychologyEngine();self.psychology=PsychologyEngine();self.engagement=EngagementEngine();self.narrative=NarrativeEngine()
+        self.journalist=JournalistEngine();self.headline=HeadlineEngine();self.editor=EditorEngine();self.factory_pipeline=FactoryPipeline()
+        logger.info("Central brain initialized with full intelligence stack.")
+    def status(self)->Dict[str,Any]:
+        names=["story_analyzer","source_intelligence","source_verification","story_cluster","event_resolution","claim_engine","evidence","source_graph","corroboration","fact_checker","investigation","misinformation","story_synthesis","significance","angle_finder","reader_psychology","psychology","engagement","narrative","journalist","headline","editor"]
+        components={name:self._component_ready(getattr(self,name,None)) for name in names}
+        return {"status":"READY","engine":"BrainPipeline","version":"2.0.0","initialized":True,"total_brains":len(names),"loaded_brains":[name for name,value in components.items() if value],"brains":components,"ai_provider":self.ai.status(),"factory_pipeline":self._component_status(self.factory_pipeline)}
+    def run(self,sources:List[Dict[str,Any]],story:Dict[str,Any]=None,topic:str="",platform:str="website",prepare_publication:bool=True)->Dict[str,Any]:
+        sources=sources if isinstance(sources,list) else [];story=dict(story) if isinstance(story,dict) else {}
+        package={"story":story,"sources":sources,"topic":topic,"claims":[],"claim_analysis":{},"evidence":{},"verification":{},"source_verification":{},"corroboration":{},"source_graph":{},"source_intelligence":{},"cluster":{},"event_resolution":{},"investigation":{},"misinformation":{},"significance":{},"angles":{},"psychology":{},"reader_psychology":{},"engagement":{},"narrative":{},"synthesis":{},"story_model":{},"article_plan":{},"article":{},"headline":{},"editorial":{},"publication":{},"ai":self.ai}
+        logger.info("="*70);logger.info("CENTRAL BRAIN PIPELINE STARTED");logger.info("="*70)
+        package["story_analysis"]=self._safe("story_analysis",self.story_analyzer,["analyze"],{"story":story})
+        if isinstance(package["story_analysis"],dict): package["story"].update(self._safe_dict(package["story_analysis"]))
+        package["source_intelligence"]=self._safe("source_intelligence",self.source_intelligence,["analyze"],{"sources":sources})
+        package["source_verification"]=self._safe("source_verification",self.source_verification,["analyze"],{"sources":sources})
+        package["cluster"]=self._safe("story_cluster",self.story_cluster,["cluster_stories","cluster","analyze"],{"stories":sources,"sources":sources,"story":story})
+        events=self._build_events(sources,story)
+        package["event_resolution"]=self._safe("event_resolution",self.event_resolution,["resolve","analyze"],{"events":events,"sources":sources,"story":story})
+        package["claim_analysis"]=self._safe("claim_engine",self.claim_engine,["analyze","extract"],{"story":package["story"],"sources":sources,"topic":topic,"research":package.get("source_intelligence",{})})
+        package["claims"]=self._extract_claims(package["claim_analysis"])
+        package["evidence"]=self._safe("evidence_engine",self.evidence,["analyze","evaluate"],{"claims":package["claims"],"sources":sources})
+        package["source_graph"]=self._safe("source_graph",self.source_graph,["build_graph","analyze"],{"sources":sources,"claims":package["claims"],"entities":package["story"].get("entities",[])})
+        package["corroboration"]=self._safe("corroboration",self.corroboration,["analyze","corroborate"],{"sources":sources,"claims":package["claims"],"evidence":package["evidence"]})
+        package["verification"]=self._safe("fact_checker",self.fact_checker,["verify_story","verify","analyze"],{"story":package["story"],"sources":sources,"claims":package["claims"],"evidence":package["evidence"]})
+        package["investigation"]=self._safe("investigation",self.investigation,["investigate","analyze"],{"story":package["story"],"research":package["source_intelligence"],"claims":package["claims"],"sources":sources})
+        package["misinformation"]=self._safe("misinformation",self.misinformation,["analyze","assess"],{"claims":package["claims"],"sources":sources,"story":package["story"]})
+        package["significance"]=self._safe("significance",self.significance,["evaluate","analyze","assess"],{"story":package["story"],"sources":sources,"claims":package["claims"],"evidence":package["evidence"]})
+        package["angles"]=self._safe("angle_finder",self.angle_finder,["analyze","find","find_angles","evaluate"],{"story":package["story"],"related_stories":self._related_stories(package["cluster"]),"evidence":package["evidence"],"trend_data":package.get("significance",{})})
+        package["synthesis"]=self._safe("story_synthesis",self.story_synthesis,["synthesize","analyze"],{"sources":sources,"evidence":package["evidence"],"metadata":{"topic":topic,"story":package["story"],"claims":package["claims"],"verification":package["verification"],"corroboration":package["corroboration"],"source_graph":package["source_graph"],"source_intelligence":package["source_intelligence"],"investigation":package["investigation"],"misinformation":package["misinformation"],"significance":package["significance"],"angles":package["angles"]}})
+        package["story_model"]=package["synthesis"] if isinstance(package["synthesis"],dict) else {}
+        psychology_input={"story":package["story"],"significance":package["significance"],"angles":package["angles"],"article":package["article_plan"],"claims":package["claims"]}
+        package["reader_psychology"]=self._safe("reader_psychology",self.reader_psychology,["analyze","evaluate","assess"],{"article_plan":psychology_input,"story":package["story"]})
+        package["psychology"]=self._safe("psychology",self.psychology,["analyze","evaluate"],{"article_plan":{"story":package["story"],"significance":package["significance"],"angles":package["angles"],"article":package.get("article",{})}})
+        package["engagement"]=self._safe("engagement",self.engagement,["analyze","evaluate","optimize"],{"story":package["story"],"article_plan":{"story":package["story"],"angles":package["angles"],"psychology":package["psychology"],"reader_psychology":package["reader_psychology"]}})
+        package["narrative"]=self._safe("narrative",self.narrative,["analyze","build","construct","create"],{"story":package["story"],"synthesis":package["synthesis"],"claims":package["claims"],"evidence":package["evidence"],"angles":package["angles"],"psychology":package["psychology"],"engagement":package["engagement"]})
+        package["article_plan"]=self._safe("journalist",self.journalist,["write","create","generate","produce","compose","analyze"],{"story":package["story"],"sources":sources,"claims":package["claims"],"evidence":package["evidence"],"verification":package["verification"],"synthesis":package["synthesis"],"narrative":package["narrative"],"angles":package["angles"],"psychology":package["psychology"],"reader_psychology":package["reader_psychology"],"engagement":package["engagement"],"significance":package["significance"],"ai":self.ai})
+        package["headline"]=self._safe("headline",self.headline,["generate","create","analyze","optimize"],{"article":package["article_plan"],"story":package["story"],"significance":package["significance"],"angles":package["angles"],"psychology":package["psychology"],"platform":platform})
+        package["editorial"]=self._safe("editor",self.editor,["review","edit","evaluate","analyze","approve"],{"article":package["article_plan"],"story":package["story"],"claims":package["claims"],"evidence":package["evidence"],"verification":package["verification"],"misinformation":package["misinformation"],"investigation":package["investigation"],"headline":package["headline"],"narrative":package["narrative"]})
+        package["publication_ready"]=self._editor_allows_publication(package["editorial"])
+        package["brain_summary"]={"status":"BRAIN_COMPLETE","topic":topic,"source_count":len(sources),"claim_count":len(package["claims"]),"publication_ready":package["publication_ready"],"verification":self._status_value(package["verification"]),"misinformation":self._status_value(package["misinformation"]),"investigation":self._status_value(package["investigation"]),"editorial":self._status_value(package["editorial"])}
+        if prepare_publication:
+            try:
+                publication=self.factory_pipeline.prepare(package,platform);package["publication"]=publication;package["publication_ready"]=bool(publication.get("status")=="READY")
+            except Exception as exc:
+                logger.exception("Brain-to-factory handoff failed.");package["publication"]={"status":"FAILED","stage":"FACTORY_HANDOFF","error":str(exc)};package["publication_ready"]=False
+        logger.info("="*70);logger.info("CENTRAL BRAIN PIPELINE COMPLETE");logger.info("="*70)
         return package
 
+    def _safe(self,name:str,engine:Any,methods:List[str],context:Dict[str,Any])->Dict[str,Any]:
+        if engine is None:return {"status":"MISSING","engine":name}
+        method=None;method_name=""
+        for candidate in methods:
+            fn=getattr(engine,candidate,None)
+            if callable(fn):method=fn;method_name=candidate;break
+        if method is None:return {"status":"UNSUPPORTED","engine":name,"error":"No compatible method found.","methods":methods}
+        try:
+            arguments=self._adapt_arguments(method,context);result=method(**arguments)
+            if result is None:return {"status":"COMPLETE","engine":name,"method":method_name}
+            if isinstance(result,dict):return result
+            return {"status":"COMPLETE","engine":name,"method":method_name,"result":result}
+        except TypeError:
+            try:
+                result=self._positional_fallback(method,context)
+                if isinstance(result,dict):return result
+                return {"status":"COMPLETE","engine":name,"method":method_name,"result":result}
+            except Exception as fallback_error:
+                logger.exception("%s fallback failed.",name);return {"status":"ERROR","engine":name,"method":method_name,"error":str(fallback_error)}
+        except Exception as exc:
+            logger.exception("%s.%s failed.",name,method_name);return {"status":"ERROR","engine":name,"method":method_name,"error":str(exc)}
 
-# =========================================================
-# HELPER
-# =========================================================
+    def _adapt_arguments(self,method,context:Dict[str,Any])->Dict[str,Any]:
+        try:signature=inspect.signature(method)
+        except (TypeError,ValueError):return context
+        arguments={}
+        aliases={"source":"sources","source_list":"sources","source_data":"sources","claim":"claims","claim_list":"claims","claim_data":"claims","research_data":"research","article_data":"article","story_data":"story","article_plan":"article_plan","trend":"trend_data","metadata":"metadata","event_list":"events","items":"stories"}
+        for parameter_name,parameter in signature.parameters.items():
+            if parameter_name=="self" or parameter.kind in {inspect.Parameter.VAR_KEYWORD,inspect.Parameter.VAR_POSITIONAL}:continue
+            if parameter_name in context:arguments[parameter_name]=context[parameter_name];continue
+            alias=aliases.get(parameter_name)
+            if alias in context:arguments[parameter_name]=context[alias];continue
+            if parameter.default is inspect.Parameter.empty:raise TypeError(f"Required parameter '{parameter_name}' cannot be mapped.")
+        return arguments
 
-def run_brain_pipeline(
-    sources: List[Dict[str, Any]],
-    story: Dict[str, Any] = None,
-    topic: str = ""
-) -> Dict[str, Any]:
+    def _positional_fallback(self,method,context):
+        signature=inspect.signature(method)
+        names=[name for name in signature.parameters if name!="self"];positional=[]
+        for name in names:
+            if name in context:positional.append(context[name])
+            elif name in {"sources","source_list"}:positional.append(context.get("sources",[]))
+            elif name in {"claims","claim_list"}:positional.append(context.get("claims",[]))
+            elif name=="story":positional.append(context.get("story",{}))
+            elif name=="research":positional.append(context.get("research",{}))
+            elif name=="article_plan":positional.append(context.get("article_plan",{}))
+            else:positional.append(None)
+        return method(*positional)
 
-    pipeline = BrainPipeline()
+    def _extract_claims(self,result)->List[Dict[str,Any]]:
+        if not isinstance(result,dict):return []
+        for key in ["claims","claim_candidates","results","items"]:
+            value=result.get(key)
+            if isinstance(value,list):return value
+        return []
 
-    return pipeline.run(
-        sources=sources,
-        story=story,
-        topic=topic
-    )
+    def _build_events(self,sources,story):
+        events=[]
+        if story:events.append({"event_id":"story_1",**story})
+        for index,source in enumerate(sources):
+            if not isinstance(source,dict):continue
+            events.append({"event_id":source.get("source_id",source.get("id",f"source_event_{index+1}")),"title":source.get("title",""),"description":source.get("description",source.get("content",source.get("text",""))),"content":source.get("content",source.get("text","")),"people":source.get("people",[]),"organizations":source.get("organizations",[]),"locations":source.get("locations",[]),"date":source.get("published_at",source.get("date",None)),"url":source.get("url","")})
+        return events
 
+    def _related_stories(self,cluster):
+        if not isinstance(cluster,dict):return []
+        stories=cluster.get("stories",[])
+        return stories if isinstance(stories,list) else []
 
-# =========================================================
-# BASIC TEST
-# =========================================================
+    def _editor_allows_publication(self,editorial):
+        if not isinstance(editorial,dict):return False
+        decision=str(editorial.get("decision",editorial.get("publication_decision","")) or "").strip().upper()
+        if decision:return decision in {"APPROVED","PUBLISH","READY","APPROVE"}
+        status=str(editorial.get("status","") or "").strip().upper()
+        if status in {"APPROVED","READY","EDITORIAL_APPROVED"}:return True
+        return editorial.get("publication_safe") is True
 
-if __name__ == "__main__":
+    def _status_value(self,value)->str:
+        if not isinstance(value,dict):return "UNKNOWN"
+        for key in ["status","publication_status","risk_level","investigation_level","decision"]:
+            if value.get(key) is not None:return str(value.get(key))
+        return "UNKNOWN"
 
-    logging.basicConfig(
-        level=logging.INFO
-    )
+    def _component_ready(self,component)->bool:return component is not None
 
-    pipeline = BrainPipeline()
+    def _component_status(self,component)->Dict[str,Any]:
+        if component is None:return {"status":"MISSING"}
+        try:
+            if hasattr(component,"status"):
+                result=component.status()
+                if isinstance(result,dict):return result
+            return {"status":"READY","component":component.__class__.__name__}
+        except Exception as exc:return {"status":"ERROR","error":str(exc)}
 
-    print(
-        pipeline.status()
-            )
+    def _safe_dict(self,value)->Dict[str,Any]:return value if isinstance(value,dict) else {}
+
+brain_pipeline=BrainPipeline()
+
+def run_brain(sources,story=None,topic="",platform="website",prepare_publication=True):
+    return brain_pipeline.run(sources=sources,story=story,topic=topic,platform=platform,prepare_publication=prepare_publication)
+
+def brain_status():return brain_pipeline.status()
+
+if __name__=="__main__":
+    import json
+    print(json.dumps(brain_pipeline.status(),indent=2,default=str))
