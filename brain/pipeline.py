@@ -131,3 +131,210 @@ class BrainPipeline:
 
         package["reader_psychology"]=self._safe("reader_psychology",self.reader_psychology,["analyze","evaluate","assess"],{"article_plan":package["article_plan"],"story":package["story"],"significance":package["significance"],"angles":package["angles"],"claims":package["claims"],"evidence":package["evidence"]})
         package["psychology"]=self._safe("psychology",self.psychology,["analyze","evaluate","assess"],{"article_plan":package["article_plan"],"story":package["story"],"significance":package["significance"],"angles":package["angles"],"reader_psychology":package["reader_psychology"],"claims":package["claims"],"evidence":package["evidence"]})
+        package["engagement"]=self._safe("engagement",self.engagement,["analyze","evaluate","optimize"],{"article_plan":package["article_plan"],"story":package["story"],"significance":package["significance"],"angles":package["angles"],"psychology":package["psychology"],"reader_psychology":package["reader_psychology"],"claims":package["claims"]})
+        package["narrative"]=self._safe("narrative",self.narrative,["analyze","build","construct","create"],{"article_plan":package["article_plan"],"story":package["story"],"synthesis":package["synthesis"],"story_model":package["story_model"],"claims":package["claims"],"evidence":package["evidence"],"angles":package["angles"],"psychology":package["psychology"],"reader_psychology":package["reader_psychology"],"engagement":package["engagement"]})
+
+        final_plan=self._safe("journalist",self.journalist,["write","create","generate","produce","compose","analyze"],{"article_plan":package["article_plan"],"story":package["story"],"sources":sources,"claims":package["claims"],"evidence":package["evidence"],"verification":package["verification"],"synthesis":package["synthesis"],"story_model":package["story_model"],"narrative":package["narrative"],"angles":package["angles"],"psychology":package["psychology"],"reader_psychology":package["reader_psychology"],"engagement":package["engagement"],"significance":package["significance"],"ai":self.ai})
+        package["article_plan"]=self._merge_article_plan(package["article_plan"],final_plan)
+        package["article"]=self._extract_article(package["article_plan"])
+
+        package["headline"]=self._safe("headline",self.headline,["generate","create","analyze","optimize"],{"article_plan":package["article_plan"],"article":package["article"],"story":package["story"],"significance":package["significance"],"angles":package["angles"],"psychology":package["psychology"],"platform":platform})
+        package["editorial"]=self._safe("editor",self.editor,["review","edit","evaluate","analyze","approve"],{"article_plan":package["article_plan"],"article":package["article"],"story":package["story"],"claims":package["claims"],"evidence":package["evidence"],"verification":package["verification"],"misinformation":package["misinformation"],"investigation":package["investigation"],"headline":package["headline"],"narrative":package["narrative"]})
+
+        package["publication_ready"]=self._editor_allows_publication(package["editorial"])
+        package["brain_summary"]={
+            "status":"BRAIN_COMPLETE","topic":topic,"source_count":len(sources),"claim_count":len(package["claims"]),
+            "publication_ready":package["publication_ready"],
+            "verification":self._status_value(package["verification"]),
+            "misinformation":self._status_value(package["misinformation"]),
+            "investigation":self._status_value(package["investigation"]),
+            "editorial":self._status_value(package["editorial"])
+        }
+
+        if prepare_publication:
+            try:
+                publication=self.factory_pipeline.prepare(package,platform)
+                package["publication"]=self._safe_dict(publication)
+                package["publication_ready"]=package["publication"].get("status")=="READY"
+            except Exception as exc:
+                logger.exception("Brain-to-factory handoff failed.")
+                package["publication"]={"status":"FAILED","stage":"FACTORY_HANDOFF","error":str(exc)}
+                package["publication_ready"]=False
+
+        logger.info("="*70);logger.info("CENTRAL BRAIN PIPELINE COMPLETE");logger.info("="*70)
+        return package
+
+    def _safe(self,name,engine,methods,context):
+        context=self._normalize_context(context)
+        if engine is None:return {"status":"MISSING","engine":name}
+        method=None;method_name=""
+        for candidate in methods:
+            fn=getattr(engine,candidate,None)
+            if callable(fn):
+                method=fn;method_name=candidate;break
+        if method is None:return {"status":"UNSUPPORTED","engine":name,"error":"No compatible method found.","methods":methods}
+        try:
+            arguments=self._adapt_arguments(method,context)
+            result=method(**arguments)
+            if result is None:return {"status":"COMPLETE","engine":name,"method":method_name,"result":{}}
+            if isinstance(result,dict):return result
+            return {"status":"COMPLETE","engine":name,"method":method_name,"result":result}
+        except TypeError as first_error:
+            logger.warning("%s.%s keyword call failed: %s",name,method_name,first_error)
+            try:
+                result=self._positional_fallback(method,context)
+                if result is None:return {"status":"COMPLETE","engine":name,"method":method_name,"result":{}}
+                if isinstance(result,dict):return result
+                return {"status":"COMPLETE","engine":name,"method":method_name,"result":result}
+            except Exception as fallback_error:
+                logger.exception("%s fallback failed.",name)
+                return {"status":"ERROR","engine":name,"method":method_name,"error":str(fallback_error)}
+        except Exception as exc:
+            logger.exception("%s.%s failed.",name,method_name)
+            return {"status":"ERROR","engine":name,"method":method_name,"error":str(exc)}
+
+    def _adapt_arguments(self,method,context):
+        try:
+            signature=inspect.signature(method)
+        except (TypeError,ValueError):
+            return context
+        aliases={"source":"sources","source_list":"sources","source_data":"sources","claim":"claims","claim_list":"claims","claim_data":"claims","research_data":"research","article_data":"article","story_data":"story","trend":"trend_data","event_list":"events","items":"stories","plan":"article_plan"}
+        fallback_defaults={"article_plan":{},"story":{},"sources":[],"claims":[],"evidence":{},"research":{},"metadata":{},"article":{},"events":[],"stories":[],"trend_data":{}}
+        arguments={}
+        for name,parameter in signature.parameters.items():
+            if name=="self" or parameter.kind in {inspect.Parameter.VAR_KEYWORD,inspect.Parameter.VAR_POSITIONAL}:continue
+            if name in context:value=context[name]
+            elif aliases.get(name) in context:value=context[aliases[name]]
+            elif name in fallback_defaults:value=fallback_defaults[name]
+            elif parameter.default is not inspect.Parameter.empty:continue
+            else:raise TypeError(f"Required parameter '{name}' cannot be mapped.")
+            arguments[name]=value
+        return arguments
+
+    def _positional_fallback(self,method,context):
+        signature=inspect.signature(method);args=[]
+        for name,parameter in signature.parameters.items():
+            if name=="self" or parameter.kind in {inspect.Parameter.VAR_KEYWORD,inspect.Parameter.VAR_POSITIONAL}:continue
+            if name in context:args.append(context[name])
+            elif name=="article_plan":args.append(context.get("article_plan",{}))
+            elif name in {"sources","source_list"}:args.append(context.get("sources",[]))
+            elif name in {"claims","claim_list"}:args.append(context.get("claims",[]))
+            elif name=="story":args.append(context.get("story",{}))
+            elif name=="evidence":args.append(context.get("evidence",{}))
+            elif name=="research":args.append(context.get("research",{}))
+            elif name=="metadata":args.append(context.get("metadata",{}))
+            elif parameter.default is not inspect.Parameter.empty:continue
+            else:args.append(None)
+        return method(*args)
+
+    def _normalize_context(self,context):
+        normalized=dict(context or {})
+        for key in ("article_plan","story","evidence","verification","corroboration","source_graph","source_intelligence","significance","angles","psychology","reader_psychology","engagement","narrative","synthesis","story_model","investigation","misinformation","headline","editorial","article"):
+            if normalized.get(key) is None:normalized[key]={}
+        for key in ("sources","claims","events","stories"):
+            if not isinstance(normalized.get(key),list):normalized[key]=[]
+        return normalized
+
+    def _build_provisional_article_plan(self,package):
+        return {
+            "status":"PROVISIONAL","topic":package.get("topic",""),
+            "story":self._safe_dict(package.get("story")),
+            "story_model":self._safe_dict(package.get("story_model")),
+            "synthesis":self._safe_dict(package.get("synthesis")),
+            "significance":self._safe_dict(package.get("significance")),
+            "angles":self._safe_dict(package.get("angles")),
+            "claims":package.get("claims",[]),
+            "evidence":self._safe_dict(package.get("evidence")),
+            "verification":self._safe_dict(package.get("verification")),
+            "investigation":self._safe_dict(package.get("investigation")),
+            "misinformation":self._safe_dict(package.get("misinformation")),
+            "psychology":self._safe_dict(package.get("psychology")),
+            "reader_psychology":self._safe_dict(package.get("reader_psychology")),
+            "engagement":self._safe_dict(package.get("engagement")),
+            "narrative":self._safe_dict(package.get("narrative"))
+        }
+
+    def _merge_article_plan(self,base,final):
+        result=dict(base or {})
+        if isinstance(final,dict):
+            result.update(final)
+            if isinstance(final.get("article_plan"),dict):result.update(final["article_plan"])
+            if isinstance(final.get("plan"),dict):result.update(final["plan"])
+        result["status"]=result.get("status","READY")
+        return result
+
+    def _extract_article(self,plan):
+        if not isinstance(plan,dict):return {}
+        for key in ("article","draft","content","result"):
+            value=plan.get(key)
+            if isinstance(value,dict):return value
+        return plan
+
+    def _extract_entities(self,story):
+        if not isinstance(story,dict):return {}
+        entities=story.get("entities",{})
+        return entities if isinstance(entities,dict) else {}
+
+    def _extract_claims(self,result):
+        if not isinstance(result,dict):return []
+        for key in ("claims","claim_candidates","results","items"):
+            value=result.get(key)
+            if isinstance(value,list):return value
+        return []
+
+    def _build_events(self,sources,story):
+        events=[]
+        if story:events.append({"event_id":"story_1",**story})
+        for index,source in enumerate(sources):
+            if not isinstance(source,dict):continue
+            events.append({"event_id":source.get("source_id",source.get("id",f"source_event_{index+1}")),"title":source.get("title",""),"description":source.get("description",source.get("content",source.get("text",""))),"content":source.get("content",source.get("text","")),"people":source.get("people",[]),"organizations":source.get("organizations",[]),"locations":source.get("locations",[]),"date":source.get("published_at",source.get("date")),"url":source.get("url",source.get("source_url",""))})
+        return events
+
+    def _related_stories(self,cluster):
+        if not isinstance(cluster,dict):return []
+        for key in ("stories","related_stories","clusters","items"):
+            value=cluster.get(key)
+            if isinstance(value,list):return value
+        return []
+
+    def _editor_allows_publication(self,editorial):
+        if not isinstance(editorial,dict):return False
+        decision=str(editorial.get("decision",editorial.get("publication_decision","")) or "").strip().upper()
+        if decision:return decision in {"APPROVED","PUBLISH","READY","APPROVE"}
+        status=str(editorial.get("status","") or "").strip().upper()
+        if status in {"APPROVED","READY","EDITORIAL_APPROVED"}:return True
+        return editorial.get("publication_safe") is True
+
+    def _status_value(self,value)->str:
+        if not isinstance(value,dict):return "UNKNOWN"
+        for key in ("status","publication_status","risk_level","investigation_level","decision"):
+            if value.get(key) is not None:return str(value.get(key))
+        return "UNKNOWN"
+
+    def _safe_dict(self,value)->Dict[str,Any]:
+        return value if isinstance(value,dict) else {}
+
+    def _component_ready(self,component)->bool:
+        return component is not None
+
+    def _component_status(self,component)->Dict[str,Any]:
+        if component is None:return {"status":"MISSING"}
+        try:
+            if hasattr(component,"status"):
+                result=component.status()
+                if isinstance(result,dict):return result
+            return {"status":"READY","component":component.__class__.__name__}
+        except Exception as exc:return {"status":"ERROR","error":str(exc)}
+
+
+brain_pipeline=BrainPipeline()
+
+def run_brain(sources,story=None,topic="",platform="website",prepare_publication=True):
+    return brain_pipeline.run(sources=sources,story=story,topic=topic,platform=platform,prepare_publication=prepare_publication)
+
+def brain_status():
+    return brain_pipeline.status()
+
+if __name__=="__main__":
+    import json
+    print(json.dumps(brain_pipeline.status(),indent=2,default=str))
