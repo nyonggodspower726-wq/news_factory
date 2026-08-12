@@ -1,12 +1,7 @@
 """
 AI NEWS FACTORY
-SCHEDULER
-
-TEST MODE:
-Runs the factory once at the configured Nigerian time.
-
-PRODUCTION MODE:
-Replace TEST_RUN_TIME with the production schedule when ready.
+SCHEDULER - TEST MODE
+Nigeria real-time clock
 """
 
 import asyncio
@@ -21,161 +16,121 @@ logger=logging.getLogger("NewsFactory.Scheduler")
 NIGERIA_TZ=ZoneInfo("Africa/Lagos")
 
 # =========================================================
-# TEST SCHEDULE
+# EDIT ONLY THIS TIME
+# FORMAT: HH:MM:SS
 # =========================================================
 
-TEST_RUN_TIME="13:54"
+TEST_RUN_TIME="14:06:00"
 
 
 class NewsScheduler:
 
     def __init__(self):
-
         self.running=False
         self.factory=NewsFactory()
-
-    # =====================================================
-    # START
-    # =====================================================
 
     async def start(self):
 
         self.running=True
 
         logger.info("="*60)
-        logger.info("AI NEWS FACTORY SCHEDULER")
+        logger.info("AI NEWS FACTORY TEST SCHEDULER")
         logger.info("="*60)
-
-        logger.info(
-            "Timezone: Africa/Lagos"
-        )
-
-        logger.info(
-            "TEST RUN TIME: %s",
-            TEST_RUN_TIME
-        )
+        logger.info("Timezone: Africa/Lagos")
+        logger.info("Test time: %s",TEST_RUN_TIME)
+        logger.info("="*60)
 
         await self.factory.start()
 
-        logger.info(
-            "Scheduler started."
-        )
+        logger.info("Factory initialized.")
 
-        # Wait for the configured Nigerian time.
         await self.wait_until_test_time()
 
         if self.running:
-
-            try:
-
-                await self.run_cycle()
-
-            except Exception as error:
-
-                logger.exception(
-                    "Scheduler cycle failed: %s",
-                    error
-                )
-
-        logger.info(
-            "Test run completed."
-        )
+            await self.run_cycle()
 
         self.running=False
 
-    # =====================================================
-    # WAIT FOR TEST TIME
-    # =====================================================
+        logger.info("="*60)
+        logger.info("TEST CYCLE FINISHED")
+        logger.info("="*60)
 
     async def wait_until_test_time(self):
 
-        now=datetime.now(
-            NIGERIA_TZ
-        )
-
-        hour,minute=map(
-            int,
-            TEST_RUN_TIME.split(":")
-        )
-
-        target=now.replace(
-            hour=hour,
-            minute=minute,
-            second=0,
-            microsecond=0
-        )
-
-        # If today's time has already passed,
-        # schedule it for tomorrow.
-        if target<=now:
-
-            target+=timedelta(
-                days=1
+        try:
+            hour,minute,second=map(
+                int,
+                TEST_RUN_TIME.split(":")
+            )
+        except ValueError:
+            raise ValueError(
+                "TEST_RUN_TIME must use HH:MM:SS format."
             )
 
-        seconds=(
-            target-now
-        ).total_seconds()
+        while self.running:
 
-        logger.info(
-            "Nigeria time now: %s",
-            now.strftime(
-                "%Y-%m-%d %H:%M:%S"
+            now=datetime.now(NIGERIA_TZ)
+
+            target=now.replace(
+                hour=hour,
+                minute=minute,
+                second=second,
+                microsecond=0
             )
-        )
 
-        logger.info(
-            "Next test run: %s",
-            target.strftime(
-                "%Y-%m-%d %H:%M:%S"
+            if target<=now:
+                target+=timedelta(days=1)
+
+            remaining=max(
+                0,
+                int(
+                    (target-now).total_seconds()
+                )
             )
-        )
 
-        logger.info(
-            "Waiting %.0f seconds.",
-            seconds
-        )
+            hours=remaining//3600
+            minutes=(remaining%3600)//60
+            seconds=remaining%60
 
-        await asyncio.sleep(
-            seconds
-        )
+            print(
+                "\r"
+                f"Nigeria Time: "
+                f"{now.strftime('%H:%M:%S')}"
+                f" | Scheduled: {TEST_RUN_TIME}"
+                f" | Remaining: "
+                f"{hours:02d}:"
+                f"{minutes:02d}:"
+                f"{seconds:02d}",
+                end="",
+                flush=True
+            )
 
-    # =====================================================
-    # ONE FACTORY CYCLE
-    # =====================================================
+            if remaining<=0:
+                print()
+                logger.info(
+                    "TEST TIME REACHED."
+                )
+                return
+
+            await asyncio.sleep(1)
 
     async def run_cycle(self):
 
+        logger.info("")
+        logger.info("="*60)
+        logger.info("FACTORY TEST CYCLE STARTED")
         logger.info("="*60)
 
-        logger.info(
-            "FACTORY TEST CYCLE STARTED"
-        )
+        now=datetime.now(NIGERIA_TZ)
 
         logger.info(
             "Nigeria time: %s",
-            datetime.now(
-                NIGERIA_TZ
-            ).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            now.strftime("%Y-%m-%d %H:%M:%S")
         )
 
-        logger.info("="*60)
-
-        # -------------------------------------------------
-        # NEWS COLLECTION
-        # -------------------------------------------------
-
         sources=[]
-
         story={}
-
         topic=""
-
-        # -------------------------------------------------
-        # CURRENT TEST STATE
-        # -------------------------------------------------
 
         if not sources and not story:
 
@@ -184,15 +139,18 @@ class NewsScheduler:
             )
 
             logger.info(
-                "Brain pipeline is waiting for "
-                "the news collector."
+                "Scheduler is working."
+            )
+
+            logger.info(
+                "News collector is not connected yet."
             )
 
             return
 
-        # -------------------------------------------------
-        # CENTRAL FACTORY
-        # -------------------------------------------------
+        logger.info(
+            "Sending news to central factory..."
+        )
 
         result=await self.factory.process_story(
             sources=sources,
@@ -200,46 +158,35 @@ class NewsScheduler:
             topic=topic
         )
 
-        if not isinstance(
-            result,
-            dict
-        ):
+        if isinstance(result,dict):
+
+            logger.info(
+                "Pipeline result: %s",
+                result.get(
+                    "pipeline_status",
+                    result.get(
+                        "status",
+                        "UNKNOWN"
+                    )
+                )
+            )
+
+        else:
 
             logger.warning(
                 "Factory returned invalid result."
             )
 
-            return
-
-        logger.info(
-            "Pipeline result: %s",
-            result.get(
-                "pipeline_status",
-                result.get(
-                    "status",
-                    "UNKNOWN"
-                )
-            )
-        )
-
-    # =====================================================
-    # STOP
-    # =====================================================
-
     async def stop(self):
 
         if not self.running:
-
             return
 
         self.running=False
 
         try:
-
             await self.factory.stop()
-
         except Exception as error:
-
             logger.exception(
                 "Factory shutdown failed: %s",
                 error
@@ -250,22 +197,17 @@ class NewsScheduler:
         )
 
 
-# =========================================================
-# START SCHEDULER
-# =========================================================
-
 async def start_scheduler():
 
     scheduler=NewsScheduler()
 
     try:
-
         await scheduler.start()
 
     except KeyboardInterrupt:
 
         logger.info(
-            "Scheduler shutdown requested."
+            "Shutdown requested."
         )
 
     except Exception as error:
@@ -280,16 +222,10 @@ async def start_scheduler():
         await scheduler.stop()
 
 
-# =========================================================
-# DIRECT RUN
-# =========================================================
-
 if __name__=="__main__":
 
     logging.basicConfig(
-
         level=logging.INFO,
-
         format=(
             "%(asctime)s | "
             "%(levelname)s | "
