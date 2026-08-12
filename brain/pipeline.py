@@ -291,3 +291,251 @@ class BrainPipeline:
             "topic":package.get("topic",""),
             "story":self._safe_dict(package.get("story")),
             "story_model":self._safe_dict(package.get("story_model"
+            "synthesis":self._safe_dict(package.get("synthesis")),
+            "significance":self._safe_dict(package.get("significance")),
+            "angles":self._safe_dict(package.get("angles")),
+            "claims":package.get("claims",[]),
+            "evidence":self._safe_dict(package.get("evidence")),
+            "verification":self._safe_dict(package.get("verification")),
+            "investigation":self._safe_dict(package.get("investigation")),
+            "misinformation":self._safe_dict(package.get("misinformation")),
+            "psychology":self._safe_dict(package.get("psychology")),
+            "reader_psychology":self._safe_dict(package.get("reader_psychology")),
+            "engagement":self._safe_dict(package.get("engagement")),
+            "narrative":self._safe_dict(package.get("narrative"))
+        }
+
+    def _merge_article_plan(self,base,final):
+        result=dict(base or {})
+        if isinstance(final,dict):
+            result.update(final)
+            if isinstance(final.get("article_plan"),dict):
+                result.update(final["article_plan"])
+            if isinstance(final.get("plan"),dict):
+                result.update(final["plan"])
+        result["status"]=result.get("status","READY")
+        return result
+
+    def _extract_article(self,plan):
+        if not isinstance(plan,dict):
+            return {}
+        for key in ("article","draft","content","result"):
+            value=plan.get(key)
+            if isinstance(value,dict):
+                return value
+        return plan
+
+    def _extract_entities(self,story):
+        if not isinstance(story,dict):
+            return {}
+        entities=story.get("entities",{})
+        return entities if isinstance(entities,dict) else {}
+
+    def _extract_claims(self,result):
+        if not isinstance(result,dict):
+            return []
+        for key in ("claims","claim_candidates","results","items"):
+            value=result.get(key)
+            if isinstance(value,list):
+                return value
+        return []
+
+    def _build_events(self,sources,story):
+        events=[]
+        if story:
+            events.append({
+                "event_id":"story_1",
+                **story
+            })
+        for index,source in enumerate(sources):
+            if not isinstance(source,dict):
+                continue
+            events.append({
+                "event_id":source.get(
+                    "source_id",
+                    source.get(
+                        "id",
+                        f"source_event_{index+1}"
+                    )
+                ),
+                "title":source.get("title",""),
+                "description":source.get(
+                    "description",
+                    source.get(
+                        "content",
+                        source.get("text","")
+                    )
+                ),
+                "content":source.get(
+                    "content",
+                    source.get("text","")
+                ),
+                "people":source.get("people",[]),
+                "organizations":source.get(
+                    "organizations",
+                    []
+                ),
+                "locations":source.get(
+                    "locations",
+                    []
+                ),
+                "date":source.get(
+                    "published_at",
+                    source.get("date")
+                ),
+                "url":source.get(
+                    "url",
+                    source.get(
+                        "source_url",
+                        ""
+                    )
+                )
+            })
+        return events
+
+    def _related_stories(self,cluster):
+        if not isinstance(cluster,dict):
+            return []
+        for key in (
+            "stories",
+            "related_stories",
+            "clusters",
+            "items"
+        ):
+            value=cluster.get(key)
+            if isinstance(value,list):
+                return value
+        return []
+
+    def _editor_allows_publication(self,editorial):
+        if not isinstance(editorial,dict):
+            return False
+
+        decision=str(
+            editorial.get(
+                "decision",
+                editorial.get(
+                    "publication_decision",
+                    ""
+                )
+            ) or ""
+        ).strip().upper()
+
+        if decision:
+            return decision in {
+                "APPROVED",
+                "PUBLISH",
+                "READY",
+                "APPROVE"
+            }
+
+        status=str(
+            editorial.get(
+                "status",
+                ""
+            ) or ""
+        ).strip().upper()
+
+        if status in {
+            "APPROVED",
+            "READY",
+            "EDITORIAL_APPROVED"
+        }:
+            return True
+
+        return editorial.get(
+            "publication_safe"
+        ) is True
+
+    def _status_value(self,value)->str:
+        if not isinstance(value,dict):
+            return "UNKNOWN"
+
+        for key in (
+            "status",
+            "publication_status",
+            "risk_level",
+            "investigation_level",
+            "decision"
+        ):
+            if value.get(key) is not None:
+                return str(
+                    value.get(key)
+                )
+
+        return "UNKNOWN"
+
+    def _safe_dict(self,value)->Dict[str,Any]:
+        return value if isinstance(
+            value,
+            dict
+        ) else {}
+
+    def _component_ready(self,component)->bool:
+        return component is not None
+
+    def _component_status(self,component)->Dict[str,Any]:
+        if component is None:
+            return {
+                "status":"MISSING"
+            }
+
+        try:
+            if hasattr(
+                component,
+                "status"
+            ):
+                result=component.status()
+
+                if isinstance(
+                    result,
+                    dict
+                ):
+                    return result
+
+            return {
+                "status":"READY",
+                "component":
+                    component.__class__.__name__
+            }
+
+        except Exception as exc:
+            return {
+                "status":"ERROR",
+                "error":str(exc)
+            }
+
+
+brain_pipeline=BrainPipeline()
+
+
+def run_brain(
+    sources,
+    story=None,
+    topic="",
+    platform="website",
+    prepare_publication=True
+):
+    return brain_pipeline.run(
+        sources=sources,
+        story=story,
+        topic=topic,
+        platform=platform,
+        prepare_publication=prepare_publication
+    )
+
+
+def brain_status():
+    return brain_pipeline.status()
+
+
+if __name__=="__main__":
+    import json
+
+    print(
+        json.dumps(
+            brain_pipeline.status(),
+            indent=2,
+            default=str
+        )
+    )
