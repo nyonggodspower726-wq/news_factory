@@ -1,1132 +1,241 @@
 """
 AI NEWS FACTORY
-Editorial Angle Intelligence Engine
-
-Purpose
--------
-Find the strongest legitimate editorial angle for a news story.
-
-The engine does not simply ask:
-    "What headline sounds exciting?"
-
-It asks:
-    "What is the most useful, interesting, defensible and
-     reader-relevant way to explain this story?"
-
-Pipeline:
-
-RAW STORY
-    ↓
-UNDERSTAND THE EVENT
-    ↓
-IDENTIFY INFORMATION GAPS
-    ↓
-IDENTIFY READER QUESTIONS
-    ↓
-GENERATE POSSIBLE ANGLES
-    ↓
-SCORE EACH ANGLE
-    ↓
-CHECK EVIDENCE SUPPORT
-    ↓
-CHECK MISLEADING POTENTIAL
-    ↓
-SELECT PRIMARY ANGLE
-    ↓
-CREATE BACKUP ANGLES
-
-The AI/LLM layer can later use this structured output to
-perform deeper reasoning.
+EDITORIAL ANGLE INTELLIGENCE ENGINE
 """
-
-from typing import Any, Dict, List, Optional
-
+from typing import Any,Dict,List,Optional
 
 class AngleFinder:
-
     def __init__(self):
-        self.name = "Editorial Angle Intelligence Engine"
-        self.version = "1.0.0"
+        self.name="Editorial Angle Intelligence Engine"
+        self.version="2.0.0"
+        self.minimum_score=50
+        self.angle_types=["WHAT_HAPPENED","WHY_IT_MATTERS","WHAT_IT_MEANS_FOR_PEOPLE","WHAT_CHANGES_NOW","WHAT_HAPPENS_NEXT","EXPLAINER","TIMELINE","IMPACT","CONTEXT","KEY_QUESTIONS","WHAT_IS_UNKNOWN","LOCAL_ANGLE","CONSEQUENCES","DEVELOPING_STORY"]
 
-        self.angle_types = [
-            "WHAT_HAPPENED",
-            "WHY_IT_MATTERS",
-            "WHAT_IT_MEANS_FOR_PEOPLE",
-            "WHAT_CHANGES_NOW",
-            "WHAT_HAPPENS_NEXT",
-            "EXPLAINER",
-            "TIMELINE",
-            "IMPACT",
-            "CONTEXT",
-            "KEY_QUESTIONS",
-            "WHAT_IS_UNKNOWN",
-            "LOCAL_ANGLE",
-            "CONSEQUENCES",
-            "DEVELOPING_STORY"
-        ]
-
-    # =====================================================
-    # MAIN ENGINE
-    # =====================================================
-
-    def find_angles(
-        self,
-        story: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Generate, evaluate and rank editorial angles.
-        """
-
-        story_data = story.get(
-            "story",
-            {}
-        )
-
-        original = story.get(
-            "original",
-            {}
-        )
-
-        title = original.get(
-            "title",
-            ""
-        )
-
-        summary = story_data.get(
-            "summary",
-            ""
-        )
-
-        story_type = story_data.get(
-            "story_type",
-            "general"
-        )
-
-        urgency = story_data.get(
-            "urgency",
-            "normal"
-        )
-
-        impact = story_data.get(
-            "initial_impact",
-            "low"
-        )
-
-        locations = story_data.get(
-            "locations",
-            []
-        )
-
-        reader_questions = story_data.get(
-            "reader_questions",
-            []
-        )
-
-        keywords = story_data.get(
-            "keywords",
-            []
-        )
-
-        candidates = self._generate_candidates(
-            title=title,
-            summary=summary,
-            story_type=story_type,
-            urgency=urgency,
-            impact=impact,
-            locations=locations,
-            reader_questions=reader_questions,
-            keywords=keywords
-        )
-
-        scored_angles = []
-
+    def find_angles(self,story:Dict[str,Any],related_stories:List[Dict[str,Any]]=None,evidence:Dict[str,Any]=None,trend_data:Dict[str,Any]=None,article_plan:Dict[str,Any]=None)->Dict[str,Any]:
+        story=self._normalize_story(story)
+        related_stories=related_stories if isinstance(related_stories,list) else []
+        evidence=evidence if isinstance(evidence,dict) else {}
+        trend_data=trend_data if isinstance(trend_data,dict) else {}
+        article_plan=article_plan if isinstance(article_plan,dict) else {}
+        story_data=self._story_data(story)
+        original=self._safe_dict(story.get("original"))
+        title=str(original.get("title") or story_data.get("title") or story.get("title") or story.get("headline") or "").strip()
+        summary=str(story_data.get("summary") or story_data.get("description") or story.get("summary") or story.get("description") or "").strip()
+        story_type=str(story_data.get("story_type") or story.get("story_type") or "general").strip()
+        urgency=str(story_data.get("urgency") or story.get("urgency") or "normal").strip()
+        impact=str(story_data.get("initial_impact") or story_data.get("impact") or story.get("impact") or "low").strip()
+        locations=story_data.get("locations") or story.get("locations") or []
+        if isinstance(locations,str): locations=[locations]
+        reader_questions=story_data.get("reader_questions") or story.get("reader_questions") or []
+        if isinstance(reader_questions,str): reader_questions=[reader_questions]
+        keywords=story_data.get("keywords") or story.get("keywords") or []
+        if isinstance(keywords,str): keywords=[keywords]
+        context={"story":story,"story_data":story_data,"title":title,"summary":summary,"story_type":story_type,"urgency":urgency,"impact":impact,"locations":locations,"reader_questions":reader_questions,"keywords":keywords,"related_stories":related_stories,"evidence":evidence,"trend_data":trend_data,"article_plan":article_plan}
+        candidates=self._generate_candidates(**context)
+        if not isinstance(candidates,list): candidates=[]
+        scored=[]
         for candidate in candidates:
-
-            scored = self._score_angle(
-                candidate,
-                story
-            )
-
-            scored_angles.append(
-                scored
-            )
-
-        scored_angles.sort(
-            key=lambda item: item["total_score"],
-            reverse=True
-        )
-
-        selected = (
-            scored_angles[0]
-            if scored_angles
-            else None
-        )
-
-        backup_angles = (
-            scored_angles[1:4]
-            if len(scored_angles) > 1
-            else []
-        )
-
-        return {
-            "engine": self.name,
-            "version": self.version,
-
-            "primary_angle": selected,
-
-            "backup_angles": backup_angles,
-
-            "all_angles": scored_angles,
-
-            "editorial_instruction":
-                self._build_editorial_instruction(
-                    selected
-                )
-        }
-
-    # =====================================================
-    # GENERATE CANDIDATE ANGLES
-    # =====================================================
-
-    def _generate_candidates(
-        self,
-        title: str,
-        summary: str,
-        story_type: str,
-        urgency: str,
-        impact: str,
-        locations: List[str],
-        reader_questions: List[str],
-        keywords: List[str]
-    ) -> List[Dict[str, Any]]:
-
-        candidates = []
-
-        # -------------------------------------------------
-        # Basic event angle
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "WHAT_HAPPENED",
-            "title": "What actually happened?",
-            "purpose": (
-                "Clearly establish the confirmed event."
-            )
-        })
-
-        # -------------------------------------------------
-        # Why it matters
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "WHY_IT_MATTERS",
-            "title": "Why this story matters",
-            "purpose": (
-                "Explain the significance beyond the announcement."
-            )
-        })
-
-        # -------------------------------------------------
-        # Reader impact
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "WHAT_IT_MEANS_FOR_PEOPLE",
-            "title": (
-                "What this means for ordinary people"
-            ),
-            "purpose": (
-                "Translate the event into practical reader impact."
-            )
-        })
-
-        # -------------------------------------------------
-        # Immediate change
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "WHAT_CHANGES_NOW",
-            "title": (
-                "What changes now?"
-            ),
-            "purpose": (
-                "Identify immediate consequences or changes."
-            )
-        })
-
-        # -------------------------------------------------
-        # Future development
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "WHAT_HAPPENS_NEXT",
-            "title": (
-                "What happens next?"
-            ),
-            "purpose": (
-                "Explain the likely next stages using confirmed information."
-            )
-        })
-
-        # -------------------------------------------------
-        # Explainer
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "EXPLAINER",
-            "title": (
-                "The story explained"
-            ),
-            "purpose": (
-                "Make a complicated event understandable."
-            )
-        })
-
-        # -------------------------------------------------
-        # Context
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "CONTEXT",
-            "title": (
-                "The context behind the story"
-            ),
-            "purpose": (
-                "Provide essential background needed to understand the event."
-            )
-        })
-
-        # -------------------------------------------------
-        # Timeline
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "TIMELINE",
-            "title": (
-                "How we got here"
-            ),
-            "purpose": (
-                "Reconstruct the important sequence of events."
-            )
-        })
-
-        # -------------------------------------------------
-        # Unknown information
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "WHAT_IS_UNKNOWN",
-            "title": (
-                "What we still don't know"
-            ),
-            "purpose": (
-                "Separate confirmed information from unresolved claims."
-            )
-        })
-
-        # -------------------------------------------------
-        # Consequences
-        # -------------------------------------------------
-
-        candidates.append({
-            "type": "CONSEQUENCES",
-            "title": (
-                "What could happen as a result"
-            ),
-            "purpose": (
-                "Explore supported consequences without presenting speculation as fact."
-            )
-        })
-
-        # -------------------------------------------------
-        # Local angle
-        # -------------------------------------------------
-
-        if locations:
-
-            candidates.append({
-                "type": "LOCAL_ANGLE",
-                "title": (
-                    "What this means locally"
-                ),
-                "purpose": (
-                    "Connect the story to the affected geographic audience."
-                )
-            })
-
-        # -------------------------------------------------
-        # Developing
-    # =====================================================
-    # EVIDENCE SUPPORT
-    # =====================================================
-
-    def _evidence_score(
-        self,
-        angle_type: str,
-        story: Dict[str, Any]
-    ) -> float:
-
-        story_data = story.get(
-            "story",
-            {}
-        )
-
-        evidence_items = story_data.get(
-            "evidence",
-            []
-        )
-
-        claims = story_data.get(
-            "claims",
-            []
-        )
-
-        # Angles that normally require less
-        # interpretation receive stronger baseline support.
-
-        baseline = {
-            "WHAT_HAPPENED": 92,
-            "TIMELINE": 88,
-            "WHAT_IS_UNKNOWN": 90,
-            "EXPLAINER": 84,
-            "CONTEXT": 82,
-            "WHY_IT_MATTERS": 78,
-            "WHAT_IT_MEANS_FOR_PEOPLE": 76,
-            "WHAT_CHANGES_NOW": 80,
-            "WHAT_HAPPENS_NEXT": 68,
-            "CONSEQUENCES": 65,
-            "LOCAL_ANGLE": 72,
-            "IMPACT": 80,
-            "DEVELOPING_STORY": 88
-        }
-
-        score = baseline.get(
-            angle_type,
-            70
-        )
-
-        if evidence_items:
-            score += min(
-                len(evidence_items) * 2,
-                10
-            )
-
-        if claims:
-            score += min(
-                len(claims),
-                5
-            )
-
-        return min(
-            score,
-            100
-        )
-
-    # =====================================================
-    # LOCAL RELEVANCE
-    # =====================================================
-
-    def _local_relevance(
-        self,
-        angle_type: str,
-        story_data: Dict[str, Any]
-    ) -> float:
-
-        locations = story_data.get(
-            "locations",
-            []
-        )
-
-        if angle_type == "LOCAL_ANGLE":
-
-            if locations:
-                return 100
-
-            return 20
-
-        if locations:
-            return 75
-
-        return 50
-
-    # =====================================================
-    # MISINFORMATION RISK
-    # =====================================================
-
-    def _risk_score(
-        self,
-        angle_type: str,
-        story: Dict[str, Any]
-    ) -> float:
-
-        story_data = story.get(
-            "story",
-            {}
-        )
-
-        uncertainty = story_data.get(
-            "uncertainty",
-            "normal"
-        )
-
-        risk = {
-            "WHAT_HAPPENED": 15,
-            "WHY_IT_MATTERS": 25,
-            "WHAT_IT_MEANS_FOR_PEOPLE": 30,
-            "WHAT_CHANGES_NOW": 25,
-            "WHAT_HAPPENS_NEXT": 40,
-            "EXPLAINER": 20,
-            "TIMELINE": 15,
-            "CONTEXT": 20,
-            "WHAT_IS_UNKNOWN": 10,
-            "CONSEQUENCES": 45,
-            "LOCAL_ANGLE": 25,
-            "IMPACT": 30,
-            "DEVELOPING_STORY": 20
-        }
-
-        value = risk.get(
-            angle_type,
-            30
-        )
-
-        if uncertainty in {
-            "high",
-            "very_high"
-        }:
-
-            value += 15
-
-        return min(
-            value,
-            100
-        )
-
-    # =====================================================
-    # ANGLE DECISION
-    # =====================================================
-
-    def _angle_decision(
-        self,
-        score: float
-    ) -> str:
-
-        if score >= 85:
-            return "STRONG_PRIMARY"
-
-        if score >= 75:
-            return "STRONG_BACKUP"
-
-        if score >= 65:
-            return "USABLE"
-
-        if score >= 50:
-            return "WEAK"
-
+            if not isinstance(candidate,dict): continue
+            scored.append(self._score_angle(candidate,context))
+        scored.sort(key=lambda x:x.get("total_score",0),reverse=True)
+        selected=scored[0] if scored else None
+        backups=scored[1:4] if len(scored)>1 else []
+        return {"engine":self.name,"version":self.version,"status":"ANGLE_ANALYSIS_COMPLETE","primary_angle":selected,"backup_angles":backups,"all_angles":scored,"editorial_instruction":self._build_editorial_instruction(selected),"summary":self._summary(selected)}
+
+    def _generate_candidates(self,title="",summary="",story_type="general",urgency="normal",impact="low",locations=None,reader_questions=None,keywords=None,**kwargs):
+        locations=locations if isinstance(locations,list) else []
+        reader_questions=reader_questions if isinstance(reader_questions,list) else []
+        candidates=[
+            {"type":"WHAT_HAPPENED","title":"What actually happened?","purpose":"Establish the confirmed event clearly."},
+            {"type":"WHY_IT_MATTERS","title":"Why this story matters","purpose":"Explain the significance beyond the announcement."},
+            {"type":"WHAT_IT_MEANS_FOR_PEOPLE","title":"What this means for ordinary people","purpose":"Translate the development into practical reader impact."},
+            {"type":"WHAT_CHANGES_NOW","title":"What changes now?","purpose":"Identify confirmed immediate changes."},
+            {"type":"WHAT_HAPPENS_NEXT","title":"What happens next?","purpose":"Explain supported next steps and remaining uncertainty."},
+            {"type":"EXPLAINER","title":"The story explained","purpose":"Make a complicated development understandable."},
+            {"type":"CONTEXT","title":"The context behind the story","purpose":"Provide essential background."},
+            {"type":"TIMELINE","title":"How we got here","purpose":"Show the important sequence of events."},
+            {"type":"WHAT_IS_UNKNOWN","title":"What we still don't know","purpose":"Separate confirmed information from unresolved questions."},
+            {"type":"CONSEQUENCES","title":"What could happen as a result","purpose":"Identify evidence-supported consequences without presenting speculation as fact."},
+            {"type":"IMPACT","title":"Who is affected and how","purpose":"Focus on measurable effects and affected groups."},
+            {"type":"DEVELOPING_STORY","title":"The latest confirmed development","purpose":"Prioritize the newest verified information."}
+        ]
+        if locations:candidates.append({"type":"LOCAL_ANGLE","title":"What this means locally","purpose":"Connect the development to the affected location or audience."})
+        if reader_questions:candidates.append({"type":"KEY_QUESTIONS","title":"The key questions readers have","purpose":"Answer the most important unanswered reader questions."})
+        return candidates
+
+    def _score_angle(self,candidate,context):
+        angle_type=str(candidate.get("type","WHAT_HAPPENED"))
+        story=context.get("story",{})
+        story_data=context.get("story_data",{})
+        evidence=context.get("evidence",{})
+        locations=context.get("locations",[])
+        related=context.get("related_stories",[])
+        evidence_score=self._evidence_score(angle_type,story,evidence)
+        local_score=self._local_relevance(angle_type,story_data,locations)
+        risk=self._risk_score(angle_type,story)
+        reader_score=self._reader_value(angle_type,context)
+        novelty=self._novelty_score(angle_type,related)
+        urgency_bonus=self._urgency_bonus(angle_type,context.get("urgency","normal"))
+        total=max(0,min(100,round(evidence_score*0.40+local_score*0.10+reader_score*0.20+novelty*0.10+urgency_bonus*0.10+(100-risk)*0.10)))
+        decision=self._angle_decision(total,evidence_score,risk)
+        return {"type":angle_type,"title":candidate.get("title",""),"purpose":candidate.get("purpose",""),"total_score":total,"decision":decision,"factors":{"evidence_support":round(evidence_score,2),"local_relevance":round(local_score,2),"reader_value":round(reader_score,2),"novelty":round(novelty,2),"urgency_bonus":round(urgency_bonus,2),"misinformation_risk":round(risk,2)}}
+
+    def _evidence_score(self,angle_type,story,evidence=None):
+        story=self._normalize_story(story)
+        data=self._story_data(story)
+        items=data.get("evidence",[]) or story.get("evidence",[]) or []
+        claims=data.get("claims",[]) or story.get("claims",[]) or []
+        baseline={"WHAT_HAPPENED":92,"TIMELINE":88,"WHAT_IS_UNKNOWN":90,"EXPLAINER":84,"CONTEXT":82,"WHY_IT_MATTERS":78,"WHAT_IT_MEANS_FOR_PEOPLE":76,"WHAT_CHANGES_NOW":80,"WHAT_HAPPENS_NEXT":68,"CONSEQUENCES":65,"LOCAL_ANGLE":72,"IMPACT":80,"DEVELOPING_STORY":88,"KEY_QUESTIONS":78}
+        score=baseline.get(angle_type,70)
+        if isinstance(items,list):score+=min(len(items)*2,10)
+        if isinstance(claims,list):score+=min(len(claims),5)
+        if isinstance(evidence,dict):
+            if evidence.get("verified") is True:score+=5
+            if evidence.get("status") in {"VERIFIED","PASSED","COMPLETE"}:score+=3
+        return min(score,100)
+
+    def _local_relevance(self,angle_type,story_data,locations=None):
+        locations=locations if isinstance(locations,list) else []
+        if angle_type=="LOCAL_ANGLE":return 100 if locations else 20
+        return 75 if locations else 50
+
+    def _risk_score(self,angle_type,story):
+        story=self._normalize_story(story)
+        data=self._story_data(story)
+        uncertainty=str(data.get("uncertainty") or story.get("uncertainty") or "normal").lower()
+        risk={"WHAT_HAPPENED":15,"WHY_IT_MATTERS":25,"WHAT_IT_MEANS_FOR_PEOPLE":30,"WHAT_CHANGES_NOW":25,"WHAT_HAPPENS_NEXT":40,"EXPLAINER":20,"TIMELINE":15,"CONTEXT":20,"WHAT_IS_UNKNOWN":10,"KEY_QUESTIONS":15,"CONSEQUENCES":45,"LOCAL_ANGLE":25,"IMPACT":30,"DEVELOPING_STORY":20}.get(angle_type,30)
+        if uncertainty in {"high","very_high","extreme"}:risk+=15
+        return min(risk,100)
+
+    def _reader_value(self,angle_type,context):
+        if angle_type in {"WHAT_IT_MEANS_FOR_PEOPLE","WHY_IT_MATTERS","WHAT_CHANGES_NOW","WHAT_HAPPENS_NEXT","KEY_QUESTIONS","IMPACT"}:return 90
+        if angle_type in {"WHAT_HAPPENED","EXPLAINER","WHAT_IS_UNKNOWN","CONTEXT"}:return 82
+        if angle_type=="LOCAL_ANGLE":return 95 if context.get("locations") else 40
+        return 75
+
+    def _novelty_score(self,angle_type,related):
+        if not related:return 60
+        if angle_type in {"WHAT_HAPPENS_NEXT","DEVELOPING_STORY","WHY_IT_MATTERS","WHAT_CHANGES_NOW"}:return 85
+        return 65
+
+    def _urgency_bonus(self,angle_type,urgency):
+        urgency=str(urgency or "normal").lower()
+        if urgency in {"breaking","urgent","high"} and angle_type in {"DEVELOPING_STORY","WHAT_HAPPENS_NEXT","WHAT_CHANGES_NOW"}:return 100
+        if urgency in {"breaking","urgent","high"}:return 80
+        return 55
+
+    def _angle_decision(self,score,evidence,risk):
+        if evidence<50 or risk>=80:return "REJECT"
+        if score>=85:return "STRONG_PRIMARY"
+        if score>=75:return "STRONG_BACKUP"
+        if score>=65:return "USABLE"
+        if score>=50:return "WEAK"
         return "REJECT"
 
-    # =====================================================
-    # EDITORIAL INSTRUCTION
-    # =====================================================
+    def _build_editorial_instruction(self,selected):
+        if not isinstance(selected,dict):return "No sufficiently supported editorial angle was identified. Return to evidence gathering."
+        instructions={"WHAT_HAPPENED":"Lead with confirmed facts and avoid unsupported interpretation.","WHY_IT_MATTERS":"Explain the significance and why readers should care.","WHAT_IT_MEANS_FOR_PEOPLE":"Translate the confirmed development into practical reader consequences.","WHAT_CHANGES_NOW":"Focus on confirmed immediate changes.","WHAT_HAPPENS_NEXT":"Explain supported next steps and clearly label uncertainty.","EXPLAINER":"Explain the issue simply with necessary context.","TIMELINE":"Organize the story chronologically and distinguish confirmed events from disputed claims.","IMPACT":"Identify affected groups and evidence-supported effects.","CONTEXT":"Provide only background necessary to understand the development.","WHAT_IS_UNKNOWN":"Clearly identify unresolved questions.","KEY_QUESTIONS":"Answer the most important reader questions using evidence.","LOCAL_ANGLE":"Connect the confirmed development to the affected location.","CONSEQUENCES":"Discuss supported consequences while separating possibilities from facts.","DEVELOPING_STORY":"Prioritize the newest confirmed development and unresolved issues."}
+        return instructions.get(selected.get("type"),instructions["WHAT_HAPPENED"])
 
-    def _build_editorial_instruction(
-        self,
-        selected: Any
-    ) -> str:
+    def get_primary_angle(self,story):return self.analyze(story).get("primary_angle")
+    def get_backup_angles(self,story):return self.analyze(story).get("backup_angles",[])
+    def get_angle_types(self):return list(self.angle_types)
 
-        if not selected:
-            return (
-                "No sufficiently supported editorial angle "
-                "was identified. Return to evidence gathering."
-            )
+    def validate_angle(self,angle):
+        if not isinstance(angle,dict):return {"valid":False,"reason":"Angle must be a dictionary."}
+        required=["type","title","purpose","total_score"]
+        missing=[x for x in required if x not in angle]
+        if missing:return {"valid":False,"reason":"Missing required fields: "+", ".join(missing)}
+        if angle["type"] not in self.angle_types:return {"valid":False,"reason":"Unknown angle type: "+str(angle["type"])}
+        return {"valid":True,"reason":"Angle is valid."}
 
-        angle_type = selected.get(
-            "type",
-            "WHAT_HAPPENED"
-        )
-
-        instructions = {
-
-            "WHAT_HAPPENED":
-                "Lead with the confirmed facts. "
-                "Do not add unsupported interpretation.",
-
-            "WHY_IT_MATTERS":
-                "Explain the significance of the event "
-                "and why readers should care.",
-
-            "WHAT_IT_MEANS_FOR_PEOPLE":
-                "Translate the confirmed development "
-                "into practical reader consequences.",
-
-            "WHAT_CHANGES_NOW":
-                "Focus on confirmed immediate changes "
-                "rather than speculation.",
-
-            "WHAT_HAPPENS_NEXT":
-                "Explain confirmed next steps and clearly "
-                "label anything that remains uncertain.",
-
-            "EXPLAINER":
-                "Explain the underlying issue in simple "
-                "language and provide the necessary context.",
-
-            "TIMELINE":
-                "Organize the story chronologically and "
-                "separate confirmed events from disputed claims.",
-
-            "IMPACT":
-                "Identify who is affected, how they are "
-                "affected, and what evidence supports that assessment.",
-
-            "CONTEXT":
-                "Provide only background information that "
-                "helps readers understand the current development.",
-
-            "WHAT_IS_UNKNOWN":
-                "Clearly identify unresolved questions "
-                "and avoid filling information gaps with assumptions.",
-
-            "LOCAL_ANGLE":
-                "Connect the confirmed development to the "
-                "affected location or local audience.",
-
-            "CONSEQUENCES":
-                "Discuss supported consequences while "
-                "clearly separating possibilities from confirmed outcomes.",
-
-            "DEVELOPING_STORY":
-                "Prioritize the newest confirmed development "
-                "and identify what remains unresolved."
-        }
-
-        return instructions.get(
-            angle_type,
-            instructions["WHAT_HAPPENED"]
-        )
-
-    # =====================================================
-    # PRIMARY ANGLE
-    # =====================================================
-
-    def get_primary_angle(
-        self,
-        story: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        result = self.find_angles(
-            story
-        )
-
-        return result.get(
-            "primary_angle"
-        )
-
-    # =====================================================
-    # BACKUP ANGLES
-    # =====================================================
-
-    def get_backup_angles(
-        self,
-        story: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-
-        result = self.find_angles(
-            story
-        )
-
-        return result.get(
-            "backup_angles",
-            []
-        )
-
-    # =====================================================
-    # ANGLE TYPES
-    # =====================================================
-
-    def get_angle_types(
-        self
-    ) -> List[str]:
-
-        return list(
-            self.angle_types
-        )
-
-    # =====================================================
-    # ANGLE VALIDATION
-    # =====================================================
-
-    def validate_angle(
-        self,
-        angle: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        if not isinstance(
-            angle,
-            dict
-        ):
-
-            return {
-                "valid": False,
-                "reason": "Angle must be a dictionary."
-            }
-
-        required_fields = [
-            "type",
-            "title",
-            "purpose",
-            "total_score"
-        ]
-
-        missing = [
-            field
-            for field in required_fields
-            if field not in angle
-        ]
-
-        if missing:
-
-            return {
-                "valid": False,
-                "reason": (
-                    "Missing required fields: "
-                    + ", ".join(missing)
-                )
-            }
-
-        if angle["type"] not in self.angle_types:
-
-            return {
-                "valid": False,
-                "reason": (
-                    "Unknown angle type: "
-                    + str(angle["type"])
-                )
-            }
-
-        return {
-            "valid": True,
-            "reason": "Angle is valid."
-        }
-
-    # =====================================================
-    # FILTER ACCEPTABLE ANGLES
-    # =====================================================
-
-    def filter_acceptable_angles(
-        self,
-        angles: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        acceptable = []
-
+    def filter_acceptable_angles(self,angles):
+        if not isinstance(angles,list):return []
+        acceptable=[]
         for angle in angles:
-
-            validation = self.validate_angle(
-                angle
-            )
-
-            if not validation["valid"]:
-                continue
-
-            if angle.get(
-                "decision"
-            ) == "REJECT":
-
-                continue
-
-            acceptable.append(
-                angle
-            )
-
-        acceptable.sort(
-            key=lambda item: item.get(
-                "total_score",
-                0
-            ),
-            reverse=True
-        )
-
+            if not isinstance(angle,dict):continue
+            if self.validate_angle(angle)["valid"] and angle.get("decision")!="REJECT":acceptable.append(angle)
+        acceptable.sort(key=lambda x:x.get("total_score",0),reverse=True)
         return acceptable
 
-    # =====================================================
-    # SELECT SAFEST PRIMARY ANGLE
-    # =====================================================
-
-    def select_safest_angle(
-        self,
-        angles: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-
-        acceptable = (
-            self.filter_acceptable_angles(
-                angles
-            )
-        )
-
-        if not acceptable:
-
-            return {
-                "type": "WHAT_HAPPENED",
-                "title": "What actually happened?",
-                "purpose": (
-                    "Focus only on confirmed information."
-                ),
-                "total_score": 0,
-                "decision": "FALLBACK"
-            }
-
-        # Prefer a high-scoring angle with
-        # strong evidence support.
-
-        acceptable.sort(
-            key=lambda item: (
-                item.get(
-                    "factors",
-                    {}
-                ).get(
-                    "evidence_support",
-                    0
-                ),
-                item.get(
-                    "total_score",
-                    0
-                )
-            ),
-            reverse=True
-        )
-
+    def select_safest_angle(self,angles):
+        acceptable=self.filter_acceptable_angles(angles)
+        if not acceptable:return {"type":"WHAT_HAPPENED","title":"What actually happened?","purpose":"Focus only on confirmed information.","total_score":0,"decision":"FALLBACK"}
+        acceptable.sort(key=lambda x:(x.get("factors",{}).get("evidence_support",0),x.get("total_score",0)),reverse=True)
         return acceptable[0]
 
-    # =====================================================
-    # CREATE ANGLE SUMMARY
-    # =====================================================
+    def create_summary(self,result):
+        if not isinstance(result,dict):return {"primary_type":None,"primary_title":None,"score":0,"editorial_instruction":""}
+        primary=result.get("primary_angle")
+        if not isinstance(primary,dict):return {"primary_type":None,"primary_title":None,"score":0,"editorial_instruction":result.get("editorial_instruction","")}
+        return {"primary_type":primary.get("type"),"primary_title":primary.get("title"),"score":primary.get("total_score",0),"decision":primary.get("decision"),"editorial_instruction":result.get("editorial_instruction","")}
 
-    def create_summary(
-        self,
-        result: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        primary = result.get(
-            "primary_angle"
-        )
-
-        if not primary:
-
-            return {
-                "primary_type": None,
-                "primary_title": None,
-                "score": 0,
-                "editorial_instruction":
-                    result.get(
-                        "editorial_instruction",
-                        ""
-                    )
-            }
-
-        return {
-            "primary_type":
-                primary.get(
-                    "type"
-                ),
-
-            "primary_title":
-                primary.get(
-                    "title"
-                ),
-
-            "score":
-                primary.get(
-                    "total_score",
-                    0
-                ),
-
-            "decision":
-                primary.get(
-                    "decision"
-                ),
-
-            "editorial_instruction":
-                result.get(
-                    "editorial_instruction",
-                    ""
-                )
-        }
-
-    # =====================================================
-    # PIPELINE INTERFACE
-    # =====================================================
-
-    def analyze(
-        self,
-        story: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        result = self.find_angles(
-            story
-        )
-
-        result["summary"] = (
-            self.create_summary(
-                result
-            )
-        )
-
+    def analyze(self,story:Dict[str,Any]=None,related_stories=None,evidence=None,trend_data=None,article_plan=None,cluster=None,**kwargs):
+        if story is None:story={}
+        elif not isinstance(story,dict):story={}
+        if cluster is not None and not related_stories:
+            related_stories=self._related_from_cluster(cluster)
+        result=self.find_angles(story=story,related_stories=related_stories,evidence=evidence,trend_data=trend_data,article_plan=article_plan)
+        result["summary"]=self.create_summary(result)
         return result
 
-    # =====================================================
-    # SIMPLE CALL INTERFACE
-    # =====================================================
+    def run(self,story=None,**kwargs):return self.analyze(story=story,**kwargs)
 
-    def run(
-        self,
-        story: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        return self.analyze(
-            story
-        )
-    # =====================================================
-    # BATCH ANALYSIS
-    # =====================================================
-
-    def analyze_many(
-        self,
-        stories: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        results = []
-
+    def analyze_many(self,stories):
+        if not isinstance(stories,list):return []
+        results=[]
         for story in stories:
-
-            try:
-                result = self.analyze(
-                    story
-                )
-
-                results.append(
-                    result
-                )
-
-            except Exception as exc:
-
-                results.append(
-                    {
-                        "success": False,
-                        "error": str(exc),
-                        "story": story
-                    }
-                )
-
+            try:results.append(self.analyze(story))
+            except Exception as exc:results.append({"success":False,"error":str(exc),"story":story})
         return results
 
-    # =====================================================
-    # BEST ANGLE FROM MULTIPLE STORIES
-    # =====================================================
+    def best_angle_from_stories(self,stories):
+        candidates=[]
+        for result in self.analyze_many(stories):
+            primary=result.get("primary_angle") if isinstance(result,dict) else None
+            if isinstance(primary,dict):candidates.append(primary)
+        if not candidates:return None
+        return max(candidates,key=lambda x:x.get("total_score",0))
 
-    def best_angle_from_stories(
-        self,
-        stories: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+    def health_check(self):
+        return {"engine":self.name,"version":self.version,"status":"READY","angle_types":len(self.angle_types),"minimum_score":self.minimum_score}
 
-        results = self.analyze_many(
-            stories
-        )
+    def status(self):
+        return self.health_check()
 
-        candidates = []
+    def _normalize_story(self,story):
+        if not isinstance(story,dict):return {}
+        if isinstance(story.get("story"),dict):return story
+        return {"story":story,"original":story}
 
-        for result in results:
+    def _story_data(self,story):
+        if not isinstance(story,dict):return {}
+        data=story.get("story",{})
+        return data if isinstance(data,dict) else story
 
-            primary = result.get(
-                "primary_angle"
-            )
+    def _safe_dict(self,value):
+        return value if isinstance(value,dict) else {}
 
-            if primary:
-                candidates.append(
-                    primary
-                )
+    def _related_from_cluster(self,cluster):
+        if not isinstance(cluster,dict):return []
+        for key in ("stories","related_stories","items","clusters"):
+            value=cluster.get(key)
+            if isinstance(value,list):return value
+        return []
 
-        if not candidates:
-            return None
+angle_finder=AngleFinder()
 
-        candidates.sort(
-            key=lambda item: item.get(
-                "total_score",
-                0
-            ),
-            reverse=True
-        )
+def find_angles(story):return angle_finder.find_angles(story)
+def analyze(story,**kwargs):return angle_finder.analyze(story,**kwargs)
+def run(story,**kwargs):return angle_finder.run(story,**kwargs)
+def get_primary_angle(story):return angle_finder.get_primary_angle(story)
+def get_backup_angles(story):return angle_finder.get_backup_angles(story)
+__all__=["AngleFinder","angle_finder","find_angles","analyze","run","get_primary_angle","get_backup_angles"]
 
-        return candidates[0]
-
-    # =====================================================
-    # HEALTH CHECK
-    # =====================================================
-
-    def health_check(
-        self
-    ) -> Dict[str, Any]:
-
-        return {
-            "engine": "AngleFinder",
-            "status": "ready",
-            "angle_types": len(
-                self.angle_types
-            ),
-            "minimum_score":
-                self.minimum_score
-        }
-
-
-# =========================================================
-# DEFAULT ENGINE INSTANCE
-# =========================================================
-
-angle_finder = AngleFinder()
-
-
-# =========================================================
-# MODULE-LEVEL HELPERS
-# =========================================================
-
-def find_angles(
-    story: Dict[str, Any]
-) -> Dict[str, Any]:
-
-    return angle_finder.find_angles(
-        story
-    )
-
-
-def analyze(
-    story: Dict[str, Any]
-) -> Dict[str, Any]:
-
-    return angle_finder.analyze(
-        story
-    )
-
-
-def run(
-    story: Dict[str, Any]
-) -> Dict[str, Any]:
-
-    return angle_finder.run(
-        story
-    )
-
-
-def get_primary_angle(
-    story: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
-
-    return angle_finder.get_primary_angle(
-        story
-    )
-
-
-def get_backup_angles(
-    story: Dict[str, Any]
-) -> List[Dict[str, Any]]:
-
-    return angle_finder.get_backup_angles(
-        story
-    )
-
-
-# =========================================================
-# PUBLIC EXPORTS
-# =========================================================
-
-__all__ = [
-    "AngleFinder",
-    "angle_finder",
-    "find_angles",
-    "analyze",
-    "run",
-    "get_primary_angle",
-    "get_backup_angles",
-]
-
-
-# =========================================================
-# DIRECT TEST
-# =========================================================
-
-if __name__ == "__main__":
-
-    test_story = {
-        "story": {
-            "title": "Example News Story",
-            "summary": (
-                "An example confirmed development "
-                "has occurred."
-            ),
-            "evidence": [
-                "Confirmed source A",
-                "Confirmed source B"
-            ],
-            "claims": [
-                "Example confirmed claim"
-            ],
-            "locations": [],
-            "uncertainty": "normal"
-        }
-    }
-
-    try:
-
-        result = angle_finder.analyze(
-            test_story
-        )
-
-        print(
-            "\nANGLE FINDER TEST"
-        )
-
-        print(
-            "Status:",
-            result.get(
-                "status",
-                "unknown"
-            )
-        )
-
-        primary = result.get(
-            "primary_angle"
-        )
-
-        if primary:
-
-            print(
-                "Primary angle:",
-                primary.get(
-                    "type"
-                )
-            )
-
-            print(
-                "Title:",
-                primary.get(
-                    "title"
-                )
-            )
-
-            print(
-                "Score:",
-                primary.get(
-                    "total_score"
-                )
-            )
-
-        print(
-            "Health:",
-            angle_finder.health_check()
-        )
-
-    except Exception as exc:
-
-        print(
-            "AngleFinder test failed:",
-            str(exc)
-        )
+if __name__=="__main__":
+    test={"story":{"title":"Example News Story","summary":"A confirmed development occurred.","evidence":["Source A","Source B"],"claims":["Confirmed claim"],"locations":[],"uncertainty":"normal"}}
+    result=angle_finder.analyze(test)
+    print("ANGLE FINDER TEST")
+    print("Status:",result.get("status"))
+    print("Primary:",result.get("summary",{}))
+    print("Health:",angle_finder.health_check())
