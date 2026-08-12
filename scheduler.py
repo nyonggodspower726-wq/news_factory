@@ -1,12 +1,11 @@
 """
 AI NEWS FACTORY
-SCHEDULER - TEST MODE
+SCHEDULER - TEST MODE ONLY
 Nigeria real-time clock
-Live source collection
+One controlled collection/brain test
 """
 
-import asyncio
-import logging
+import asyncio,logging
 from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 
@@ -14,619 +13,260 @@ from main import NewsFactory
 from collectors.source_manager import source_manager
 
 logger=logging.getLogger("NewsFactory.Scheduler")
-
 NIGERIA_TZ=ZoneInfo("Africa/Lagos")
 
 # =========================================================
-# EDIT ONLY THIS TIME
-# FORMAT: HH:MM:SS
+# TEST SETTINGS - EDIT THESE ONLY
 # =========================================================
-
 TEST_RUN_TIME="14:16:00"
-
-# =========================================================
-# COLLECTION SETTINGS
-# =========================================================
-
 NEWS_LIMIT=30
 NEWS_TOPIC=""
+RUN_IF_TIME_MISSED=True
 
 class NewsScheduler:
-
     def __init__(self):
-
         self.running=False
         self.factory=NewsFactory()
         self.source_manager=source_manager
-
-    # =====================================================
-    # START
-    # =====================================================
+        self.test_completed=False
 
     async def start(self):
-
         self.running=True
-
-        logger.info("")
         logger.info("="*70)
-        logger.info("AI NEWS FACTORY - TEST SCHEDULER")
+        logger.info("AI NEWS FACTORY - TEST MODE")
         logger.info("="*70)
-        logger.info(
-            "Timezone: Africa/Lagos"
-        )
-        logger.info(
-            "Test time: %s",
-            TEST_RUN_TIME
-        )
-        logger.info(
-            "News source limit: %s",
-            NEWS_LIMIT
-        )
+        logger.info("Timezone: Africa/Lagos")
+        logger.info("Test run time: %s",TEST_RUN_TIME)
+        logger.info("News limit: %s",NEWS_LIMIT)
+        logger.info("Automatic repeating run: DISABLED")
+        logger.info("Live publishing automation: DISABLED")
         logger.info("="*70)
 
         await self.factory.start()
-
-        logger.info(
-            "Factory initialized successfully."
-        )
+        logger.info("Factory initialized.")
 
         try:
-
-            source_status=self.source_manager.status()
-
-            logger.info(
-                "Source manager: %s",
-                source_status
-            )
-
-        except Exception as error:
-
-            logger.exception(
-                "Source manager status failed: %s",
-                error
-            )
+            logger.info("Source manager: %s",self.source_manager.status())
+        except Exception as exc:
+            logger.warning("Source manager status unavailable: %s",exc)
 
         await self.wait_until_test_time()
 
-        if self.running:
+        if not self.running:
+            return
 
-            await self.run_cycle()
-
+        result=await self.run_cycle()
+        self.test_completed=True
         self.running=False
 
-        logger.info("")
         logger.info("="*70)
-        logger.info(
-            "TEST CYCLE FINISHED"
-        )
+        logger.info("SINGLE TEST RUN FINISHED")
+        logger.info("No second automatic cycle will run.")
         logger.info("="*70)
-
-    # =====================================================
-    # WAIT FOR TEST TIME
-    # =====================================================
+        return result
 
     async def wait_until_test_time(self):
-
         try:
-
-            hour,minute,second=map(
-                int,
-                TEST_RUN_TIME.split(":")
-            )
-
-            if not (
-                0<=hour<=23
-                and
-                0<=minute<=59
-                and
-                0<=second<=59
-            ):
+            parts=TEST_RUN_TIME.split(":")
+            if len(parts)!=3:
                 raise ValueError
-
+            hour,minute,second=map(int,parts)
+            if not (0<=hour<=23 and 0<=minute<=59 and 0<=second<=59):
+                raise ValueError
         except ValueError:
+            raise ValueError("TEST_RUN_TIME must use HH:MM:SS, e.g. 15:30:00")
 
-            raise ValueError(
-                "TEST_RUN_TIME must use HH:MM:SS format."
-            )
+        now=datetime.now(NIGERIA_TZ)
+        target=now.replace(hour=hour,minute=minute,second=second,microsecond=0)
+
+        if target<=now:
+            if RUN_IF_TIME_MISSED:
+                logger.info("Configured test time has passed today; running the single test now.")
+                return
+            target+=timedelta(days=1)
 
         while self.running:
-
-            now=datetime.now(
-                NIGERIA_TZ
-            )
-
-            target=now.replace(
-                hour=hour,
-                minute=minute,
-                second=second,
-                microsecond=0
-            )
-
-            if target<=now:
-
-                target+=timedelta(
-                    days=1
-                )
-
-            remaining=max(
-                0,
-                int(
-                    (
-                        target-now
-                    ).total_seconds()
-                )
-            )
-
+            now=datetime.now(NIGERIA_TZ)
+            remaining=max(0,int((target-now).total_seconds()))
             hours=remaining//3600
-
             minutes=(remaining%3600)//60
-
             seconds=remaining%60
 
             print(
-                "\r"
-                f"Nigeria Time: "
-                f"{now.strftime('%H:%M:%S')}"
-                f" | Scheduled: "
-                f"{TEST_RUN_TIME}"
-                f" | Remaining: "
-                f"{hours:02d}:"
-                f"{minutes:02d}:"
-                f"{seconds:02d}",
+                f"\rNigeria Time: {now.strftime('%H:%M:%S')} | "
+                f"Scheduled: {TEST_RUN_TIME} | "
+                f"Remaining: {hours:02d}:{minutes:02d}:{seconds:02d}",
                 end="",
                 flush=True
             )
 
             if remaining<=0:
-
                 print()
-
-                logger.info(
-                    "TEST TIME REACHED."
-                )
-
+                logger.info("TEST TIME REACHED.")
                 return
 
             await asyncio.sleep(1)
 
-    # =====================================================
-    # ONE FACTORY CYCLE
-    # =====================================================
-
     async def run_cycle(self):
-
-        logger.info("")
+        now=datetime.now(NIGERIA_TZ)
         logger.info("="*70)
-        logger.info(
-            "FACTORY TEST CYCLE STARTED"
-        )
+        logger.info("FACTORY TEST CYCLE STARTED")
+        logger.info("Nigeria time: %s",now.strftime("%Y-%m-%d %H:%M:%S"))
         logger.info("="*70)
 
-        now=datetime.now(
-            NIGERIA_TZ
-        )
-
-        logger.info(
-            "Nigeria time: %s",
-            now.strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        )
-
-        # =================================================
-        # 1. COLLECT LIVE NEWS
-        # =================================================
-
-        logger.info(
-            "Starting live source collection..."
-        )
+        # -------------------------------------------------
+        # COLLECT FROM ALL CONFIGURED SOURCES
+        # -------------------------------------------------
+        logger.info("Collecting live news from configured sources...")
 
         try:
-
             collection=await self.source_manager.collect(
                 topic=NEWS_TOPIC,
                 limit=NEWS_LIMIT
             )
+        except Exception as exc:
+            logger.exception("Source collection failed: %s",exc)
+            return {"status":"COLLECTION_FAILED","error":str(exc)}
 
-        except Exception as error:
+        if not isinstance(collection,dict):
+            logger.error("Source manager returned invalid data.")
+            return {"status":"COLLECTION_FAILED","error":"Invalid collection response."}
 
-            logger.exception(
-                "Source collection failed: %s",
-                error
-            )
-
-            return {
-                "status":"COLLECTION_FAILED",
-                "error":str(error)
-            }
-
-        if not isinstance(
-            collection,
-            dict
-        ):
-
-            logger.error(
-                "Source manager returned invalid data."
-            )
-
-            return {
-                "status":"COLLECTION_FAILED",
-                "error":"Invalid source manager response."
-            }
-
-        sources=collection.get(
-            "sources",
-            []
-        )
-
-        if not isinstance(
-            sources,
-            list
-        ):
-
+        sources=collection.get("sources",[])
+        if not isinstance(sources,list):
             sources=[]
 
-        logger.info(
-            "Collection status: %s",
-            collection.get(
-                "status",
-                "UNKNOWN"
-            )
-        )
+        logger.info("Collection status: %s",collection.get("status","UNKNOWN"))
+        logger.info("Total normalized sources: %s",len(sources))
 
-        logger.info(
-            "Sources collected: %s",
-            len(sources)
-        )
+        for item in collection.get("collector_status",[]):
+            logger.info("SOURCE | %s | %s | count=%s",item.get("name","UNKNOWN"),item.get("status","UNKNOWN"),item.get("count","-"))
 
-        errors=collection.get(
-            "errors",
-            []
-        )
-
+        errors=collection.get("errors",[])
         if errors:
-
-            logger.warning(
-                "Source warnings/errors: %s",
-                errors
-            )
-
-        # =================================================
-        # 2. STOP IF NO NEWS
-        # =================================================
+            logger.warning("Source warnings: %s",errors)
 
         if not sources:
+            logger.warning("ZERO usable news stories collected.")
+            logger.warning("Brain will NOT be called.")
+            return {"status":"NO_NEWS","collection":collection}
 
-            logger.warning(
-                "No usable news sources were collected."
-            )
+        # -------------------------------------------------
+        # CHOOSE PRIMARY STORY
+        # -------------------------------------------------
+        primary=self._select_primary(sources)
 
-            logger.warning(
-                "Brain will NOT be called with an empty package."
-            )
+        if not primary:
+            logger.warning("Could not select a primary story.")
+            return {"status":"NO_PRIMARY_STORY","collection":collection}
 
-            return {
-                "status":"NO_NEWS",
-                "collection":collection
-            }
+        story=self._build_story(primary)
+        topic=NEWS_TOPIC or story.get("title","")
 
-        # =================================================
-        # 3. SELECT PRIMARY STORY
-        # =================================================
+        logger.info("PRIMARY STORY")
+        logger.info("Title: %s",story.get("title",""))
+        logger.info("Source: %s",story.get("source",""))
+        logger.info("URL: %s",story.get("source_url",""))
+        logger.info("Additional sources: %s",max(len(sources)-1,0))
 
-        primary=sources[0]
-
-        if not isinstance(
-            primary,
-            dict
-        ):
-
-            logger.error(
-                "Primary source is invalid."
-            )
-
-            return {
-                "status":"INVALID_PRIMARY_SOURCE"
-            }
-
-        title=str(
-            primary.get(
-                "title",
-                primary.get(
-                    "headline",
-                    ""
-                )
-            )
-            or ""
-        ).strip()
-
-        description=str(
-            primary.get(
-                "description",
-                primary.get(
-                    "summary",
-                    ""
-                )
-            )
-            or ""
-        ).strip()
-
-        content=str(
-            primary.get(
-                "content",
-                primary.get(
-                    "text",
-                    primary.get(
-                        "body",
-                        description
-                    )
-                )
-            )
-            or ""
-        ).strip()
-
-        source_url=str(
-            primary.get(
-                "source_url",
-                primary.get(
-                    "url",
-                    ""
-                )
-            )
-            or ""
-        ).strip()
-
-        source_name=str(
-            primary.get(
-                "source",
-                primary.get(
-                    "publisher",
-                    primary.get(
-                        "name",
-                        ""
-                    )
-                )
-            )
-            or ""
-        ).strip()
-
-        image_url=str(
-            primary.get(
-                "image_url",
-                ""
-            )
-            or ""
-        ).strip()
-
-        published_at=primary.get(
-            "published_at"
-        )
-
-        # =================================================
-        # 4. BUILD STORY
-        # =================================================
-
-        story={
-
-            "title":
-                title,
-
-            "headline":
-                title,
-
-            "description":
-                description,
-
-            "summary":
-                description,
-
-            "content":
-                content,
-
-            "body":
-                content,
-
-            "source":
-                source_name,
-
-            "source_name":
-                source_name,
-
-            "source_url":
-                source_url,
-
-            "url":
-                source_url,
-
-            "published_at":
-                published_at,
-
-            "image_url":
-                image_url
-        }
-
-        topic=(
-            NEWS_TOPIC
-            or
-            title
-        )
-
-        logger.info(
-            "Primary story selected:"
-        )
-
-        logger.info(
-            "TITLE: %s",
-            title
-        )
-
-        logger.info(
-            "SOURCE: %s",
-            source_name
-        )
-
-        logger.info(
-            "URL: %s",
-            source_url
-        )
-
-        logger.info(
-            "Additional sources available: %s",
-            max(
-                len(sources)-1,
-                0
-            )
-        )
-
-        # =================================================
-        # 5. SEND TO CENTRAL FACTORY
-        # =================================================
-
-        logger.info("")
-        logger.info(
-            "Sending collected news to NewsFactory..."
-        )
+        # -------------------------------------------------
+        # SEND TO MAIN / BRAIN
+        # -------------------------------------------------
+        logger.info("Sending %s collected sources to NewsFactory...",len(sources))
 
         try:
-
             result=await self.factory.process_story(
                 sources=sources,
                 story=story,
                 topic=topic
             )
+        except Exception as exc:
+            logger.exception("Factory processing failed: %s",exc)
+            return {"status":"FACTORY_FAILED","error":str(exc),"collection":collection}
 
-        except Exception as error:
+        if not isinstance(result,dict):
+            logger.warning("Factory returned non-dictionary result.")
+            return {"status":"INVALID_FACTORY_RESULT","result":result}
 
-            logger.exception(
-                "Central factory processing failed: %s",
-                error
-            )
+        status=result.get("pipeline_status",result.get("status","UNKNOWN"))
 
-            return {
-                "status":"FACTORY_FAILED",
-                "error":str(error),
-                "collection":collection
-            }
-
-        # =================================================
-        # 6. REPORT RESULT
-        # =================================================
-
-        if not isinstance(
-            result,
-            dict
-        ):
-
-            logger.warning(
-                "Factory returned non-dictionary result."
-            )
-
-            return {
-                "status":"INVALID_FACTORY_RESULT",
-                "result":result
-            }
-
-        pipeline_status=result.get(
-            "pipeline_status",
-            result.get(
-                "status",
-                "UNKNOWN"
-            )
-        )
-
-        logger.info("")
         logger.info("="*70)
-        logger.info(
-            "BRAIN / FACTORY RESULT"
-        )
-        logger.info("="*70)
-
-        logger.info(
-            "Pipeline status: %s",
-            pipeline_status
-        )
-
-        logger.info(
-            "Factory test cycle completed."
-        )
+        logger.info("TEST RESULT")
+        logger.info("Pipeline status: %s",status)
+        logger.info("Brain completed: YES")
+        logger.info("Automatic repeating cycle: NO")
+        logger.info("================================================================")
 
         return result
 
-    # =====================================================
-    # STOP
-    # =====================================================
+    def _select_primary(self,sources):
+        valid=[]
+        for item in sources:
+            if not isinstance(item,dict):
+                continue
+            title=str(item.get("title",item.get("headline","")) or "").strip()
+            content=str(item.get("content",item.get("description",item.get("summary",""))) or "").strip()
+            if not title:
+                continue
+            score=0
+            if content: score+=30
+            if len(content)>=200: score+=20
+            if item.get("source_url") or item.get("url"): score+=15
+            if item.get("published_at"): score+=10
+            if item.get("source") or item.get("publisher"): score+=10
+            if item.get("image_url"): score+=5
+            valid.append((score,item))
+        if not valid:
+            return None
+        valid.sort(key=lambda x:x[0],reverse=True)
+        return valid[0][1]
+
+    def _build_story(self,primary):
+        title=str(primary.get("title",primary.get("headline","")) or "").strip()
+        description=str(primary.get("description",primary.get("summary","")) or "").strip()
+        content=str(primary.get("content",primary.get("text",primary.get("body",description))) or "").strip()
+        url=str(primary.get("source_url",primary.get("url","")) or "").strip()
+        source=primary.get("source",primary.get("publisher",primary.get("name","")))
+        source=str(source or "").strip()
+        return {
+            "title":title,
+            "headline":title,
+            "description":description,
+            "summary":description,
+            "content":content,
+            "body":content,
+            "source":source,
+            "source_name":source,
+            "source_url":url,
+            "url":url,
+            "published_at":primary.get("published_at"),
+            "image_url":str(primary.get("image_url","") or "")
+        }
 
     async def stop(self):
-
         if not self.running:
-
             return
-
         self.running=False
-
         try:
-
             await self.factory.stop()
-
-        except Exception as error:
-
-            logger.exception(
-                "Factory shutdown failed: %s",
-                error
-            )
-
-        logger.info(
-            "Scheduler stopped."
-        )
-
-
-# =========================================================
-# START
-# =========================================================
+        except Exception as exc:
+            logger.exception("Factory shutdown failed: %s",exc)
+        logger.info("Scheduler stopped.")
 
 async def start_scheduler():
-
     scheduler=NewsScheduler()
-
     try:
-
-        await scheduler.start()
-
+        return await scheduler.start()
     except KeyboardInterrupt:
-
-        logger.info(
-            "Shutdown requested."
-        )
-
-    except Exception as error:
-
-        logger.exception(
-            "Scheduler failed: %s",
-            error
-        )
-
+        logger.info("Shutdown requested.")
+    except Exception as exc:
+        logger.exception("Scheduler failed: %s",exc)
     finally:
-
         await scheduler.stop()
 
-
-# =========================================================
-# RUN DIRECTLY
-# =========================================================
-
 if __name__=="__main__":
-
     logging.basicConfig(
-
         level=logging.INFO,
-
-        format=(
-            "%(asctime)s | "
-            "%(levelname)s | "
-            "%(message)s"
-        )
+        format="%(asctime)s | %(levelname)s | %(message)s"
     )
-
-    asyncio.run(
-        start_scheduler()
-            )
+    asyncio.run(start_scheduler())
