@@ -152,3 +152,143 @@ class BrainPipeline:
             else:raise TypeError(f"Required parameter '{name}' cannot be mapped.")
             arguments[name]=value
         return arguments
+    def _positional_fallback(self,method,context):
+        signature=inspect.signature(method);args=[]
+        for name,parameter in signature.parameters.items():
+            if name=="self" or parameter.kind in {inspect.Parameter.VAR_KEYWORD,inspect.Parameter.VAR_POSITIONAL}:continue
+            if name in context:args.append(context[name])
+            elif name in {"sources","source_list"}:args.append(context.get("sources",[]))
+            elif name in {"claims","claim_list"}:args.append(context.get("claims",[]))
+            elif name=="story":args.append(context.get("story",{}))
+            elif name=="article_plan":args.append(context.get("article_plan",{}))
+            elif name=="article":args.append(context.get("article",{}))
+            elif name=="evidence":args.append(context.get("evidence",{}))
+            elif name=="research":args.append(context.get("research",{}))
+            elif name=="metadata":args.append(context.get("metadata",{}))
+            elif name=="events":args.append(context.get("events",[]))
+            elif name=="stories":args.append(context.get("stories",[]))
+            elif name=="cluster":args.append(context.get("cluster",{}))
+            elif name=="psychology":args.append(context.get("psychology",{}))
+            elif name=="verification":args.append(context.get("verification",{}))
+            elif name=="misinformation":args.append(context.get("misinformation",{}))
+            elif name=="investigation":args.append(context.get("investigation",{}))
+            elif name=="headline":args.append(context.get("headline",{}))
+            elif name=="narrative":args.append(context.get("narrative",{}))
+            elif parameter.default is not inspect.Parameter.empty:continue
+            else:args.append(None)
+        return method(*args)
+    def _normalize_context(self,context):
+        normalized=dict(context or {})
+        for key in ("article_plan","story","evidence","verification","corroboration","source_graph","source_intelligence","significance","angles","psychology","reader_psychology","engagement","narrative","synthesis","story_model","investigation","misinformation","headline","editorial","article","cluster"):
+            if normalized.get(key) is None:normalized[key]={}
+        for key in ("sources","claims","events","stories"):
+            if not isinstance(normalized.get(key),list):normalized[key]=[]
+        return normalized
+    def _extract_claims(self,result):
+        if not isinstance(result,dict):return []
+        for key in ("claims","claim_candidates","claim_analysis","results","items"):
+            value=result.get(key)
+            if isinstance(value,list):return value
+            if isinstance(value,dict):
+                nested=self._extract_claims(value)
+                if nested:return nested
+        return []
+    def _extract_entities(self,story):
+        if not isinstance(story,dict):return {}
+        value=story.get("entities")
+        if isinstance(value,dict):return value
+        result={}
+        for key in ("people","organizations","locations"):
+            item=story.get(key)
+            if isinstance(item,list):result[key]=item
+        nested=story.get("story")
+        if isinstance(nested,dict):
+            for key in ("people","organizations","locations"):
+                item=nested.get(key)
+                if isinstance(item,list) and key not in result:result[key]=item
+        return result
+    def _build_events(self,sources,story):
+        events=[]
+        if isinstance(story,dict) and story:events.append({"event_id":"story:1",**story})
+        for index,source in enumerate(sources if isinstance(sources,list) else []):
+            if not isinstance(source,dict):continue
+            events.append({"event_id":source.get("source_id",source.get("id",f"source_event_{index+1}")),"title":source.get("title",source.get("headline","")),"description":source.get("description",source.get("content",source.get("text",""))),"content":source.get("content",source.get("text",source.get("body",""))),"people":source.get("people",[]),"organizations":source.get("organizations",[]),"locations":source.get("locations",[]),"date":source.get("published_at",source.get("date")),"url":source.get("url",source.get("source_url",""))})
+        return events
+    def _related_stories(self,cluster):
+        if not isinstance(cluster,dict):return []
+        for key in ("stories","related_stories","items","clusters"):
+            value=cluster.get(key)
+            if isinstance(value,list):return value
+        return []
+    def _editor_allows_publication(self,editorial):
+        if not isinstance(editorial,dict):return False
+        if editorial.get("publication_gate") is True:return True
+        if editorial.get("publication_safe") is True and not editorial.get("errors"):return True
+        decision=str(editorial.get("decision",editorial.get("publication_decision","")) or "").strip().upper()
+        if decision in {"APPROVED","APPROVED_WITH_WARNINGS","APPROVE","PUBLISH","READY"}:return True
+        status=str(editorial.get("status","") or "").strip().upper()
+        return status in {"APPROVED","READY","EDITORIAL_APPROVED"}
+    def _status_value(self,value):
+        if not isinstance(value,dict):return "UNKNOWN"
+        for key in ("status","pipeline_status","publication_status","risk_level","investigation_level","decision"):
+            if value.get(key) is not None:return str(value.get(key))
+        return "UNKNOWN"
+    def _component_ready(self,component):
+        return component is not None
+    def _component_status(self,component):
+        if component is None:return {"status":"MISSING"}
+        try:
+            if hasattr(component,"status"):
+                result=component.status()
+                if isinstance(result,dict):return result
+            return {"status":"READY","component":component.__class__.__name__}
+        except Exception as exc:return {"status":"ERROR","error":str(exc)}
+    def _build_provisional_article_plan(self,package):
+        return {
+            "status":"PROVISIONAL",
+            "topic":package.get("topic",""),
+            "story":self._safe_dict(package.get("story")),
+            "story_model":self._safe_dict(package.get("story_model")),
+            "synthesis":self._safe_dict(package.get("synthesis")),
+            "significance":self._safe_dict(package.get("significance")),
+            "angles":self._safe_dict(package.get("angles")),
+            "claims":package.get("claims",[]),
+            "evidence":self._safe_dict(package.get("evidence")),
+            "verification":self._safe_dict(package.get("verification")),
+            "investigation":self._safe_dict(package.get("investigation")),
+            "misinformation":self._safe_dict(package.get("misinformation")),
+            "psychology":self._safe_dict(package.get("psychology")),
+            "reader_psychology":self._safe_dict(package.get("reader_psychology")),
+            "engagement":self._safe_dict(package.get("engagement")),
+            "narrative":self._safe_dict(package.get("narrative")),
+            "source_graph":self._safe_dict(package.get("source_graph")),
+            "source_intelligence":self._safe_dict(package.get("source_intelligence")),
+            "safe_claims":package.get("claims",[]),
+            "excluded_claims":[],
+            "article":{"headline":{},"dek":{},"lead":{},"key_facts":[],"context":{},"why_it_matters":{},"what_happens_next":{},"what_is_unknown":{},"sources":[]}
+        }
+    def _merge_article_plan(self,base,final):
+        base=self._safe_dict(base);final=self._safe_dict(final);merged=dict(base)
+        for key,value in final.items():
+            if isinstance(value,dict) and isinstance(merged.get(key),dict):
+                combined=dict(merged[key]);combined.update(value);merged[key]=combined
+            elif value not in (None,"",[],{}):merged[key]=value
+        if not isinstance(merged.get("article"),dict):merged["article"]={}
+        if isinstance(final.get("article"),dict):
+            article=dict(merged["article"]);article.update(final["article"]);merged["article"]=article
+        return merged
+    def _extract_article(self,article_plan):
+        if not isinstance(article_plan,dict):return {}
+        article=article_plan.get("article",{})
+        return article if isinstance(article,dict) else {}
+    def _safe_dict(self,value):
+        return value if isinstance(value,dict) else {}
+brain_pipeline=BrainPipeline()
+def run_brain(sources,story=None,topic="",platform="website",prepare_publication=True):
+    return brain_pipeline.run(sources=sources,story=story,topic=topic,platform=platform,prepare_publication=prepare_publication)
+def brain_status():
+    return brain_pipeline.status()
+__all__=["BrainPipeline","NvidiaBrainClient","brain_pipeline","run_brain","brain_status"]
+if __name__=="__main__":
+    import json
+    print(json.dumps(brain_pipeline.status(),indent=2,default=str))
