@@ -26,7 +26,7 @@ from factory_pipeline import FactoryPipeline
 logger=logging.getLogger("NewsFactory.BrainPipeline")
 class NvidiaBrainClient:
     def __init__(self,model:str="meta/llama-3.3-70b-instruct",base_url:str="https://integrate.api.nvidia.com/v1"):
-        self.name="NVIDIA Brain Client";self.version="2.1.0";self.model=model;self.base_url=base_url.rstrip("/")
+        self.name="NVIDIA Brain Client";self.version="2.2.0";self.model=model;self.base_url=base_url.rstrip("/")
         self.api_keys=[os.getenv("NVIDIA_API_KEY_1","").strip(),os.getenv("NVIDIA_API_KEY_2","").strip(),os.getenv("NVIDIA_API_KEY_3","").strip(),os.getenv("NVIDIA_API_KEY_4","").strip()]
         self.api_keys=[x for x in self.api_keys if x];self.current_key_index=0;self.timeout=int(os.getenv("NVIDIA_TIMEOUT","60"))
     def status(self)->Dict[str,Any]:
@@ -105,13 +105,9 @@ class BrainPipeline:
         package["brain_summary"]={"status":"BRAIN_COMPLETE","topic":topic,"source_count":len(sources),"claim_count":len(package["claims"]),"publication_ready":package["publication_ready"],"verification":self._status_value(package["verification"]),"misinformation":self._status_value(package["misinformation"]),"investigation":self._status_value(package["investigation"]),"editorial":self._status_value(package["editorial"])}
         if prepare_publication:
             try:
-                publication=self.factory_pipeline.prepare(package,platform)
-                package["publication"]=self._safe_dict(publication)
-                package["publication_ready"]=package["publication"].get("status")=="READY"
+                publication=self.factory_pipeline.prepare(package,platform);package["publication"]=self._safe_dict(publication);package["publication_ready"]=package["publication"].get("status")=="READY"
             except Exception as exc:
-                logger.exception("Brain-to-factory handoff failed.")
-                package["publication"]={"status":"FAILED","stage":"FACTORY_HANDOFF","error":str(exc)}
-                package["publication_ready"]=False
+                logger.exception("Brain-to-factory handoff failed.");package["publication"]={"status":"FAILED","stage":"FACTORY_HANDOFF","error":str(exc)};package["publication_ready"]=False
         package["pipeline_status"]="BRAIN_COMPLETE"
         package["status"]="BRAIN_COMPLETE"
         logger.info("BRAIN PIPELINE STATUS: BRAIN_COMPLETE")
@@ -138,11 +134,9 @@ class BrainPipeline:
                 if isinstance(result,dict):return result
                 return {"status":"COMPLETE","engine":name,"method":method_name,"result":result}
             except Exception as fallback_error:
-                logger.exception("%s fallback failed.",name)
-                return {"status":"ERROR","engine":name,"method":method_name,"error":str(fallback_error)}
+                logger.exception("%s fallback failed.",name);return {"status":"ERROR","engine":name,"method":method_name,"error":str(fallback_error)}
         except Exception as exc:
-            logger.exception("%s.%s failed.",name,method_name)
-            return {"status":"ERROR","engine":name,"method":method_name,"error":str(exc)}
+            logger.exception("%s.%s failed.",name,method_name);return {"status":"ERROR","engine":name,"method":method_name,"error":str(exc)}
     def _adapt_arguments(self,method,context):
         try:signature=inspect.signature(method)
         except (TypeError,ValueError):return context
@@ -158,116 +152,3 @@ class BrainPipeline:
             else:raise TypeError(f"Required parameter '{name}' cannot be mapped.")
             arguments[name]=value
         return arguments
-    def _positional_fallback(self,method,context):
-        signature=inspect.signature(method);args=[]
-        for name,parameter in signature.parameters.items():
-            if name=="self" or parameter.kind in {inspect.Parameter.VAR_KEYWORD,inspect.Parameter.VAR_POSITIONAL}:continue
-            if name in context:args.append(context[name])
-            elif name in {"sources","source_list"}:args.append(context.get("sources",[]))
-            elif name in {"claims","claim_list"}:args.append(context.get("claims",[]))
-            elif name=="story":args.append(context.get("story",{}))
-            elif name=="article_plan":args.append(context.get("article_plan",{}))
-            elif name=="article":args.append(context.get("article",{}))
-            elif name=="evidence":args.append(context.get("evidence",{}))
-            elif name=="research":args.append(context.get("research",{}))
-            elif name=="metadata":args.append(context.get("metadata",{}))
-            elif name=="events":args.append(context.get("events",[]))
-            elif name=="stories":args.append(context.get("stories",[]))
-            elif name=="cluster":args.append(context.get("cluster",{}))
-            elif name=="psychology":args.append(context.get("psychology",{}))
-            elif name=="verification":args.append(context.get("verification",{}))
-            elif name=="misinformation":args.append(context.get("misinformation",{}))
-            elif name=="investigation":args.append(context.get("investigation",{}))
-            elif name=="headline":args.append(context.get("headline",{}))
-            elif name=="narrative":args.append(context.get("narrative",{}))
-            elif parameter.default is not inspect.Parameter.empty:continue
-            else:args.append(None)
-        return method(*args)
-    def _normalize_context(self,context):
-        normalized=dict(context or {})
-        for key in ("article_plan","story","evidence","verification","corroboration","source_graph","source_intelligence","significance","angles","psychology","reader_psychology","engagement","narrative","synthesis","story_model","investigation","misinformation","headline","editorial","article","cluster"):
-            if normalized.get(key) is None:normalized[key]={}
-        for key in ("sources","claims","events","stories"):
-            if not isinstance(normalized.get(key),list):normalized[key]=[]
-        return normalized
-    def _extract_claims(self,result):
-        if not isinstance(result,dict):return []
-        for key in ("claims","claim_candidates","results","items"):
-            value=result.get(key)
-            if isinstance(value,list):return value
-        return []
-    def _extract_entities(self,story):
-        if not isinstance(story,dict):return {}
-        entities=story.get("entities")
-        if isinstance(entities,dict):return entities
-        result={}
-        for key in ("people","organizations","locations"):
-            value=story.get(key)
-            if isinstance(value,list):result[key]=value
-        nested=story.get("story")
-        if isinstance(nested,dict):
-            for key in ("people","organizations","locations"):
-                value=nested.get(key)
-                if isinstance(value,list) and key not in result:result[key]=value
-        return result
-    def _build_events(self,sources,story):
-        events=[]
-        if isinstance(story,dict) and story:events.append({"event_id":"story:1",**story})
-        for index,source in enumerate(sources if isinstance(sources,list) else []):
-            if not isinstance(source,dict):continue
-            events.append({"event_id":source.get("source_id",source.get("id",f"source_event_{index+1}")),"title":source.get("title",source.get("headline","")),"description":source.get("description",source.get("content",source.get("text",""))),"content":source.get("content",source.get("text",source.get("body",""))),"people":source.get("people",[]),"organizations":source.get("organizations",[]),"locations":source.get("locations",[]),"date":source.get("published_at",source.get("date")),"url":source.get("url",source.get("source_url",""))})
-        return events
-    def _related_stories(self,cluster):
-        if not isinstance(cluster,dict):return []
-        for key in ("stories","related_stories","items","clusters"):
-            value=cluster.get(key)
-            if isinstance(value,list):return value
-        return []
-    def _build_provisional_article_plan(self,package):
-        return {"status":"PROVISIONAL","topic":package.get("topic",""),"story":self._safe_dict(package.get("story")),"story_model":self._safe_dict(package.get("story_model")),"synthesis":self._safe_dict(package.get("synthesis")),"significance":self._safe_dict(package.get("significance")),"angles":self._safe_dict(package.get("angles")),"claims":package.get("claims",[]),"evidence":self._safe_dict(package.get("evidence")),"verification":self._safe_dict(package.get("verification")),"investigation":self._safe_dict(package.get("investigation")),"misinformation":self._safe_dict(package.get("misinformation")),"psychology":self._safe_dict(package.get("psychology")),"reader_psychology":self._safe_dict(package.get("reader_psychology")),"engagement":self._safe_dict(package.get("engagement")),"narrative":self._safe_dict(package.get("narrative")),"source_graph":self._safe_dict(package.get("source_graph")),"source_intelligence":self._safe_dict(package.get("source_intelligence")),"safe_claims":package.get("claims",[]),"excluded_claims":[],"article":{"headline":{},"dek":{},"lead":{},"key_facts":[],"context":{},"why_it_matters":{},"what_happens_next":{},"what_is_unknown":{},"sources":[]}}
-    def _merge_article_plan(self,base,final):
-        base=self._safe_dict(base);final=self._safe_dict(final);merged=dict(base)
-        for key,value in final.items():
-            if isinstance(value,dict) and isinstance(merged.get(key),dict):
-                combined=dict(merged[key]);combined.update(value);merged[key]=combined
-            elif value not in (None,"",[],{}):
-                merged[key]=value
-        if not isinstance(merged.get("article"),dict):merged["article"]={}
-        if isinstance(final.get("article"),dict):
-            article=dict(merged["article"]);article.update(final["article"]);merged["article"]=article
-        return merged
-    def _extract_article(self,article_plan):
-        if not isinstance(article_plan,dict):return {}
-        article=article_plan.get("article",{})
-        return article if isinstance(article,dict) else {}
-    def _editor_allows_publication(self,editorial):
-        if not isinstance(editorial,dict):return False
-        if editorial.get("publication_gate") is True:return True
-        if editorial.get("publication_safe") is True and not editorial.get("errors"):return True
-        decision=str(editorial.get("decision",editorial.get("publication_decision","")) or "").strip().upper()
-        if decision in {"APPROVED","APPROVED_WITH_WARNINGS","APPROVE","PUBLISH","READY"}:return True
-        status=str(editorial.get("status","") or "").strip().upper()
-        return status in {"APPROVED","READY","EDITORIAL_APPROVED"}
-    def _status_value(self,value):
-        if not isinstance(value,dict):return "UNKNOWN"
-        for key in ("status","pipeline_status","publication_status","risk_level","investigation_level","decision"):
-            if value.get(key) is not None:return str(value.get(key))
-        return "UNKNOWN"
-    def _component_ready(self,component):return component is not None
-    def _component_status(self,component):
-        if component is None:return {"status":"MISSING"}
-        try:
-            if hasattr(component,"status"):
-                result=component.status()
-                if isinstance(result,dict):return result
-            return {"status":"READY","component":component.__class__.__name__}
-        except Exception as exc:return {"status":"ERROR","error":str(exc)}
-    def _safe_dict(self,value):return value if isinstance(value,dict) else {}
-brain_pipeline=BrainPipeline()
-def run_brain(sources,story=None,topic="",platform="website",prepare_publication=True):
-    return brain_pipeline.run(sources=sources,story=story,topic=topic,platform=platform,prepare_publication=prepare_publication)
-def brain_status():return brain_pipeline.status()
-__all__=["BrainPipeline","NvidiaBrainClient","brain_pipeline","run_brain","brain_status"]
-if __name__=="__main__":
-    import json
-    print(json.dumps(brain_pipeline.status(),indent=2,default=str))
