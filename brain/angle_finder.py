@@ -7,16 +7,18 @@ from typing import Any,Dict,List,Optional
 class AngleFinder:
     def __init__(self):
         self.name="Editorial Angle Intelligence Engine"
-        self.version="2.0.0"
+        self.version="2.1.0"
         self.minimum_score=50
         self.angle_types=["WHAT_HAPPENED","WHY_IT_MATTERS","WHAT_IT_MEANS_FOR_PEOPLE","WHAT_CHANGES_NOW","WHAT_HAPPENS_NEXT","EXPLAINER","TIMELINE","IMPACT","CONTEXT","KEY_QUESTIONS","WHAT_IS_UNKNOWN","LOCAL_ANGLE","CONSEQUENCES","DEVELOPING_STORY"]
 
-    def find_angles(self,story:Dict[str,Any],related_stories:List[Dict[str,Any]]=None,evidence:Dict[str,Any]=None,trend_data:Dict[str,Any]=None,article_plan:Dict[str,Any]=None)->Dict[str,Any]:
+    def find_angles(self,story:Dict[str,Any],related_stories:List[Dict[str,Any]]=None,evidence:Dict[str,Any]=None,trend_data:Dict[str,Any]=None,article_plan:Dict[str,Any]=None,cluster:Dict[str,Any]=None)->Dict[str,Any]:
         story=self._normalize_story(story)
         related_stories=related_stories if isinstance(related_stories,list) else []
         evidence=evidence if isinstance(evidence,dict) else {}
         trend_data=trend_data if isinstance(trend_data,dict) else {}
         article_plan=article_plan if isinstance(article_plan,dict) else {}
+        if cluster and not related_stories:
+            related_stories=self._related_from_cluster(cluster)
         story_data=self._story_data(story)
         original=self._safe_dict(story.get("original"))
         title=str(original.get("title") or story_data.get("title") or story.get("title") or story.get("headline") or "").strip()
@@ -25,18 +27,18 @@ class AngleFinder:
         urgency=str(story_data.get("urgency") or story.get("urgency") or "normal").strip()
         impact=str(story_data.get("initial_impact") or story_data.get("impact") or story.get("impact") or "low").strip()
         locations=story_data.get("locations") or story.get("locations") or []
-        if isinstance(locations,str): locations=[locations]
+        if isinstance(locations,str):locations=[locations]
         reader_questions=story_data.get("reader_questions") or story.get("reader_questions") or []
-        if isinstance(reader_questions,str): reader_questions=[reader_questions]
+        if isinstance(reader_questions,str):reader_questions=[reader_questions]
         keywords=story_data.get("keywords") or story.get("keywords") or []
-        if isinstance(keywords,str): keywords=[keywords]
-        context={"story":story,"story_data":story_data,"title":title,"summary":summary,"story_type":story_type,"urgency":urgency,"impact":impact,"locations":locations,"reader_questions":reader_questions,"keywords":keywords,"related_stories":related_stories,"evidence":evidence,"trend_data":trend_data,"article_plan":article_plan}
+        if isinstance(keywords,str):keywords=[keywords]
+        context={"story":story,"story_data":story_data,"title":title,"summary":summary,"story_type":story_type,"urgency":urgency,"impact":impact,"locations":locations,"reader_questions":reader_questions,"keywords":keywords,"related_stories":related_stories,"evidence":evidence,"trend_data":trend_data,"article_plan":article_plan,"cluster":cluster or {}}
         candidates=self._generate_candidates(**context)
-        if not isinstance(candidates,list): candidates=[]
+        if not isinstance(candidates,list):candidates=[]
         scored=[]
         for candidate in candidates:
-            if not isinstance(candidate,dict): continue
-            scored.append(self._score_angle(candidate,context))
+            if isinstance(candidate,dict):
+                scored.append(self._score_angle(candidate,context))
         scored.sort(key=lambda x:x.get("total_score",0),reverse=True)
         selected=scored[0] if scored else None
         backups=scored[1:4] if len(scored)>1 else []
@@ -137,105 +139,11 @@ class AngleFinder:
         instructions={"WHAT_HAPPENED":"Lead with confirmed facts and avoid unsupported interpretation.","WHY_IT_MATTERS":"Explain the significance and why readers should care.","WHAT_IT_MEANS_FOR_PEOPLE":"Translate the confirmed development into practical reader consequences.","WHAT_CHANGES_NOW":"Focus on confirmed immediate changes.","WHAT_HAPPENS_NEXT":"Explain supported next steps and clearly label uncertainty.","EXPLAINER":"Explain the issue simply with necessary context.","TIMELINE":"Organize the story chronologically and distinguish confirmed events from disputed claims.","IMPACT":"Identify affected groups and evidence-supported effects.","CONTEXT":"Provide only background necessary to understand the development.","WHAT_IS_UNKNOWN":"Clearly identify unresolved questions.","KEY_QUESTIONS":"Answer the most important reader questions using evidence.","LOCAL_ANGLE":"Connect the confirmed development to the affected location.","CONSEQUENCES":"Discuss supported consequences while separating possibilities from facts.","DEVELOPING_STORY":"Prioritize the newest confirmed development and unresolved issues."}
         return instructions.get(selected.get("type"),instructions["WHAT_HAPPENED"])
 
+    def _summary(self,selected):
+        if not isinstance(selected,dict):
+            return {"primary_type":None,"primary_title":None,"score":0,"decision":"NONE"}
+        return {"primary_type":selected.get("type"),"primary_title":selected.get("title"),"score":selected.get("total_score",0),"decision":selected.get("decision","UNKNOWN")}
+
     def get_primary_angle(self,story):return self.analyze(story).get("primary_angle")
     def get_backup_angles(self,story):return self.analyze(story).get("backup_angles",[])
     def get_angle_types(self):return list(self.angle_types)
-
-    def validate_angle(self,angle):
-        if not isinstance(angle,dict):return {"valid":False,"reason":"Angle must be a dictionary."}
-        required=["type","title","purpose","total_score"]
-        missing=[x for x in required if x not in angle]
-        if missing:return {"valid":False,"reason":"Missing required fields: "+", ".join(missing)}
-        if angle["type"] not in self.angle_types:return {"valid":False,"reason":"Unknown angle type: "+str(angle["type"])}
-        return {"valid":True,"reason":"Angle is valid."}
-
-    def filter_acceptable_angles(self,angles):
-        if not isinstance(angles,list):return []
-        acceptable=[]
-        for angle in angles:
-            if not isinstance(angle,dict):continue
-            if self.validate_angle(angle)["valid"] and angle.get("decision")!="REJECT":acceptable.append(angle)
-        acceptable.sort(key=lambda x:x.get("total_score",0),reverse=True)
-        return acceptable
-
-    def select_safest_angle(self,angles):
-        acceptable=self.filter_acceptable_angles(angles)
-        if not acceptable:return {"type":"WHAT_HAPPENED","title":"What actually happened?","purpose":"Focus only on confirmed information.","total_score":0,"decision":"FALLBACK"}
-        acceptable.sort(key=lambda x:(x.get("factors",{}).get("evidence_support",0),x.get("total_score",0)),reverse=True)
-        return acceptable[0]
-
-    def create_summary(self,result):
-        if not isinstance(result,dict):return {"primary_type":None,"primary_title":None,"score":0,"editorial_instruction":""}
-        primary=result.get("primary_angle")
-        if not isinstance(primary,dict):return {"primary_type":None,"primary_title":None,"score":0,"editorial_instruction":result.get("editorial_instruction","")}
-        return {"primary_type":primary.get("type"),"primary_title":primary.get("title"),"score":primary.get("total_score",0),"decision":primary.get("decision"),"editorial_instruction":result.get("editorial_instruction","")}
-
-    def analyze(self,story:Dict[str,Any]=None,related_stories=None,evidence=None,trend_data=None,article_plan=None,cluster=None,**kwargs):
-        if story is None:story={}
-        elif not isinstance(story,dict):story={}
-        if cluster is not None and not related_stories:
-            related_stories=self._related_from_cluster(cluster)
-        result=self.find_angles(story=story,related_stories=related_stories,evidence=evidence,trend_data=trend_data,article_plan=article_plan)
-        result["summary"]=self.create_summary(result)
-        return result
-
-    def run(self,story=None,**kwargs):return self.analyze(story=story,**kwargs)
-
-    def analyze_many(self,stories):
-        if not isinstance(stories,list):return []
-        results=[]
-        for story in stories:
-            try:results.append(self.analyze(story))
-            except Exception as exc:results.append({"success":False,"error":str(exc),"story":story})
-        return results
-
-    def best_angle_from_stories(self,stories):
-        candidates=[]
-        for result in self.analyze_many(stories):
-            primary=result.get("primary_angle") if isinstance(result,dict) else None
-            if isinstance(primary,dict):candidates.append(primary)
-        if not candidates:return None
-        return max(candidates,key=lambda x:x.get("total_score",0))
-
-    def health_check(self):
-        return {"engine":self.name,"version":self.version,"status":"READY","angle_types":len(self.angle_types),"minimum_score":self.minimum_score}
-
-    def status(self):
-        return self.health_check()
-
-    def _normalize_story(self,story):
-        if not isinstance(story,dict):return {}
-        if isinstance(story.get("story"),dict):return story
-        return {"story":story,"original":story}
-
-    def _story_data(self,story):
-        if not isinstance(story,dict):return {}
-        data=story.get("story",{})
-        return data if isinstance(data,dict) else story
-
-    def _safe_dict(self,value):
-        return value if isinstance(value,dict) else {}
-
-    def _related_from_cluster(self,cluster):
-        if not isinstance(cluster,dict):return []
-        for key in ("stories","related_stories","items","clusters"):
-            value=cluster.get(key)
-            if isinstance(value,list):return value
-        return []
-
-angle_finder=AngleFinder()
-
-def find_angles(story):return angle_finder.find_angles(story)
-def analyze(story,**kwargs):return angle_finder.analyze(story,**kwargs)
-def run(story,**kwargs):return angle_finder.run(story,**kwargs)
-def get_primary_angle(story):return angle_finder.get_primary_angle(story)
-def get_backup_angles(story):return angle_finder.get_backup_angles(story)
-__all__=["AngleFinder","angle_finder","find_angles","analyze","run","get_primary_angle","get_backup_angles"]
-
-if __name__=="__main__":
-    test={"story":{"title":"Example News Story","summary":"A confirmed development occurred.","evidence":["Source A","Source B"],"claims":["Confirmed claim"],"locations":[],"uncertainty":"normal"}}
-    result=angle_finder.analyze(test)
-    print("ANGLE FINDER TEST")
-    print("Status:",result.get("status"))
-    print("Primary:",result.get("summary",{}))
-    print("Health:",angle_finder.health_check())
