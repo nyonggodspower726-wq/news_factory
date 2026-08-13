@@ -18,7 +18,7 @@ NIGERIA_TZ=ZoneInfo("Africa/Lagos")
 # =========================================================
 # TEST SETTINGS - EDIT THESE ONLY
 # =========================================================
-TEST_RUN_TIME="11:22:00"
+TEST_RUN_TIME="12:09:00"
 NEWS_LIMIT=30
 NEWS_TOPIC=""
 RUN_IF_TIME_MISSED=True
