@@ -183,3 +183,99 @@ class ClaimEngine:
             if domain:
                 domains.add(domain)
         return len(domains)
+    def _build_summary(self,claims:List[Dict[str,Any]])->Dict[str,Any]:
+        counts=defaultdict(int)
+        for claim in claims:
+            counts[str(claim.get("status","UNVERIFIED"))]+=1
+        total=len(claims)
+        supported=counts["VERIFIED"]+counts["WELL_SUPPORTED"]
+        return {"total_claims":total,"verified":counts["VERIFIED"],"well_supported":counts["WELL_SUPPORTED"],"partially_supported":counts["PARTIALLY_SUPPORTED"],"unverified":counts["UNVERIFIED"],"contradicted":counts["CONTRADICTED"],"opinions":counts["OPINION"],"predictions":counts["PREDICTION"],"attributed_claims":counts["ATTRIBUTED_CLAIM"],"support_rate":round(supported/max(total,1)*100,2)}
+    def _publication_status(self,claims:List[Dict[str,Any]])->str:
+        if not claims:
+            return "NO_CLAIMS"
+        if any(x.get("status")=="CONTRADICTED" for x in claims):
+            return "HOLD_FOR_REVIEW"
+        critical=[x for x in claims if x.get("status")=="UNVERIFIED" and str(x.get("importance","")).upper() in {"HIGH","CRITICAL"}]
+        if critical:
+            return "HOLD_FOR_VERIFICATION"
+        return "READY_FOR_EDITOR_REVIEW"
+    def _infer_claim_type(self,sentence:str)->str:
+        lowered=sentence.lower()
+        opinion_markers=["i think","in my view","arguably","in my opinion"]
+        prediction_markers=["could","may","might","expected to","likely","forecast","will likely"]
+        if any(x in lowered for x in opinion_markers):
+            return "OPINION"
+        if any(x in lowered for x in prediction_markers):
+            return "PREDICTION"
+        attribution_markers=["according to","said","says","reported by","the agency stated","officials said"]
+        if any(x in lowered for x in attribution_markers):
+            return "ATTRIBUTED_CLAIM"
+        return "FACT"
+    def _text_similarity(self,text_a:str,text_b:str)->float:
+        a=set(self._tokens(text_a))
+        b=set(self._tokens(text_b))
+        if not a or not b:
+            return 0.0
+        return len(a&b)/max(len(a|b),1)
+    def _key_phrase_match(self,text_a:str,text_b:str)->bool:
+        a=set(self._tokens(text_a))
+        b=set(self._tokens(text_b))
+        if len(a)<3 or len(b)<3:
+            return False
+        common=a&b
+        return len(common)>=3 and len(common)/max(min(len(a),len(b)),1)>=0.25
+    def _tokens(self,text:str)->List[str]:
+        return re.findall(r"\b[a-z0-9]{3,}\b",str(text).lower())
+    def _domain(self,url:Any)->str:
+        if not url:
+            return ""
+        value=str(url).strip().lower()
+        match=re.search(r"(?:https?://)?(?:www\.)?([^/:?#]+)",value)
+        return match.group(1) if match else value
+    def _source_authority(self,source:Any,domain:str)->float:
+        d=(domain or "").lower()
+        if "nasa.gov" in d:
+            return 100
+        if "esa.int" in d:
+            return 95
+        if "reuters.com" in d:
+            return 90
+        if "apnews.com" in d:
+            return 90
+        if "bbc.com" in d or "bbc.co.uk" in d:
+            return 85
+        if "cnn.com" in d:
+            return 80
+        if "newsapi.org" in d:
+            return 50
+        return 60
+    def _deduplicate_claims(self,claims:List[Dict[str,Any]])->List[Dict[str,Any]]:
+        result=[]
+        seen=set()
+        for claim in claims:
+            text=re.sub(r"\s+"," ",str(claim.get("text","")).strip())
+            key=text.lower()
+            if key and key not in seen:
+                seen.add(key)
+                claim=dict(claim)
+                claim["text"]=text
+                result.append(claim)
+        return result
+def analyze_claims(story:Dict[str,Any])->Dict[str,Any]:
+    return ClaimEngine().analyze(story)
+def _self_test()->int:
+    story={"headline":"Test story","body":"NASA confirmed a major mission milestone today.","claims":[{"id":"claim_1","text":"NASA confirmed a major mission milestone today.","type":"FACT","importance":"HIGH"}],"evidence":[{"id":"source_1","text":"NASA confirmed a major mission milestone today.","source":"https://www.nasa.gov/","type":"PRIMARY","authority":100,"primary":True,"independent":True,"supports":["claim_1"]},{"id":"source_2","text":"Reuters reported that NASA confirmed the mission milestone.","source":"https://www.reuters.com/","type":"NEWS","authority":90,"primary":False,"independent":True,"supports":["claim_1"]}]}
+    result=analyze_claims(story)
+    print("=== CLAIM ENGINE SELF TEST ===")
+    print("STATUS:",result.get("status"))
+    print("CLAIM COUNT:",result.get("claim_count"))
+    print("SUMMARY:",result.get("summary"))
+    print("PUBLICATION STATUS:",result.get("publication_status"))
+    if result.get("claims"):
+        for claim in result["claims"]:
+            print("CLAIM:",claim.get("claim"))
+            print("RESULT:",claim.get("status"),"SCORE:",claim.get("support_score"),"EVIDENCE:",claim.get("evidence_count"))
+    print("=== CLAIM ENGINE SELF TEST COMPLETE ===")
+    return 0
+if __name__=="__main__":
+    raise SystemExit(_self_test())
