@@ -86,3 +86,44 @@ class GitHubPublisher:
         return {"id":article.get("id") or slug,"slug":slug,"title":title,"category":category,"excerpt":excerpt,"content":content,"author":author,"published_at":published_at,"read_time":article.get("read_time",article.get("reading_time","5 min read")),"featured":bool(article.get("featured",False)),"image":image,"image_url":image,"image_alt":article.get("image_alt",""),"image_caption":article.get("image_caption",""),"image_credit":article.get("image_credit",""),"tags":tags,"keywords":keywords,"sources":normalized_sources,"source_url":article.get("source_url",""),"seo":seo}
     def _sort_articles(self,articles:List[Dict[str,Any]])->List[Dict[str,Any]]:
         return sorted(articles,key=lambda x:str(x.get("published_at","") or "") if isinstance(x,dict) else "",reverse=True)
+    def _get_articles_file(self)->Dict[str,Any]:
+        response=requests.get(self._contents_endpoint(self.articles_path),params={"ref":self.branch},headers=self._headers(),timeout=self.timeout)
+        if response.status_code==404:return {"articles":[],"sha":""}
+        if not response.ok:raise requests.RequestException(self._github_error(response))
+        data=response.json()
+        encoded=data.get("content","")
+        if not encoded:return {"articles":[],"sha":data.get("sha","")}
+        try:
+            decoded=base64.b64decode(encoded.replace("\n","").strip()).decode("utf-8")
+            articles=json.loads(decoded)
+            if not isinstance(articles,list):articles=[]
+        except Exception as exc:
+            raise ValueError(f"Could not decode or parse {self.articles_path}: {exc}")
+        return {"articles":articles,"sha":data.get("sha","")}
+    def _article_url(self,article:Dict[str,Any])->str:
+        if not self.site_url:return ""
+        slug=str(article.get("slug","") or "").strip()
+        return f"{self.site_url}/article.html?slug={slug}" if slug else self.site_url
+    def _github_error(self,response)->str:
+        try:
+            data=response.json()
+            message=data.get("message")
+            if message:return f"GitHub API {response.status_code}: {message}"
+        except Exception:
+            pass
+        return f"GitHub API {response.status_code}: {response.text[:500]}"
+    def _contents_endpoint(self,path:str)->str:
+        return f"https://api.github.com/repos/{self.repository}/contents/{path}"
+    def _headers(self)->Dict[str,str]:
+        return {"Accept":"application/vnd.github+json","Authorization":f"Bearer {self.token}","X-GitHub-Api-Version":"2022-11-28","User-Agent":"AI-News-Factory/2.0"}
+    def _encode(self,text:str)->str:
+        return base64.b64encode(text.encode("utf-8")).decode("ascii")
+    def _configured(self)->bool:
+        return bool(self.repository and self.token)
+    def status(self)->Dict[str,Any]:
+        configured=self._configured()
+        return {"engine":self.name,"version":self.version,"status":"READY" if configured else "NOT_CONFIGURED","configured":configured,"repository":self.repository,"branch":self.branch,"articles_path":self.articles_path,"site_url":self.site_url}
+    def _failure(self,error:str)->Dict[str,Any]:
+        return {"status":"FAILED","published":False,"platform":self.platform,"error":str(error)}
+def create_github_publisher(repository:Optional[str]=None,token:Optional[str]=None,branch:Optional[str]=None)->GitHubPublisher:
+    return GitHubPublisher(repository=repository,token=token,branch=branch)
