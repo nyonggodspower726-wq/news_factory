@@ -1,12 +1,3 @@
-"""
-AI NEWS FACTORY
-MAIN CONTROLLER
-
-The main application talks to the central BrainPipeline.
-
-Individual brain engines should NOT be called directly from here.
-"""
-
 import asyncio
 import logging
 from datetime import datetime
@@ -14,84 +5,77 @@ from typing import Any, Dict, List
 
 from config import FACTORY_NAME, VERSION
 from brain.pipeline import BrainPipeline
-
-
-# =========================================================
-# LOGGING
-# =========================================================
+from factory_pipeline import FactoryPipeline
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-logger = logging.getLogger("NewsFactory")
+logger = logging.getLogger("NewsFactory.FactoryPipeline")
 
-
-# =========================================================
-# NEWS FACTORY
-# =========================================================
 
 class NewsFactory:
-
     def __init__(self):
-
         self.name = FACTORY_NAME
         self.version = VERSION
-
         self.running = False
 
-        # ONE connection to the entire brain system.
+        # CENTRAL AI BRAIN
         self.brain = BrainPipeline()
 
-    # =====================================================
-    # START
-    # =====================================================
+        # PUBLICATION / DISTRIBUTION PIPELINE
+        self.factory_pipeline = FactoryPipeline()
 
     async def start(self):
-
         self.running = True
 
-        logger.info("=" * 60)
-        logger.info(self.name)
-        logger.info(f"Version: {self.version}")
-        logger.info("=" * 60)
-
-        logger.info("Starting News Factory...")
+        logger.info("=" * 70)
+        logger.info("NEWS FACTORY STARTING")
+        logger.info("=" * 70)
+        logger.info("Factory: %s", self.name)
+        logger.info("Version: %s", self.version)
         logger.info(
-            f"Startup time: "
-            f"{datetime.now().isoformat()}"
+            "Startup time: %s",
+            datetime.utcnow().isoformat()
         )
 
-        # -------------------------------------------------
-        # BRAIN STATUS
-        # -------------------------------------------------
-
+        # Load and report brain status.
         status = self.brain.status()
 
         logger.info(
             "Brain system loaded: %s/%s",
-            status["loaded_brains"],
-            status["total_brains"]
+            status.get("loaded_brains", 0),
+            status.get("total_brains", 0)
         )
 
-        for brain_name, state in status[
-            "brains"
-        ].items():
-
+        for brain_name, state in status.get("brains", {}).items():
             logger.info(
                 "BRAIN | %s | %s",
                 brain_name,
                 state
             )
 
-        logger.info(
-            "News Factory is online."
-        )
+        logger.info("AI intelligence pipeline: READY")
 
-    # =====================================================
-    # PROCESS STORY
-    # =====================================================
+        # Load and report publication pipeline status.
+        try:
+            factory_status = self.factory_pipeline.status()
+
+            logger.info(
+                "Publication pipeline: %s",
+                factory_status.get("status", "READY")
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "Publication pipeline status check warning: %s",
+                exc
+            )
+
+        logger.info("Automatic publishing pipeline: ENABLED")
+        logger.info("News Factory is online.")
+        logger.info("=" * 70)
 
     async def process_story(
         self,
@@ -101,94 +85,178 @@ class NewsFactory:
     ) -> Dict[str, Any]:
 
         if not self.running:
-
             raise RuntimeError(
                 "News Factory is not running."
             )
 
-        logger.info(
-            "Starting intelligence pipeline..."
-        )
+        logger.info("=" * 70)
+        logger.info("STARTING NEWS PROCESSING")
+        logger.info("=" * 70)
 
-        result = await asyncio.to_thread(
-            self.brain.run,
-            sources,
-            story,
-            topic
+        logger.info(
+            "Sources received: %s",
+            len(sources or [])
         )
 
         logger.info(
-            "Brain pipeline completed."
+            "Topic: %s",
+            topic or "General News"
         )
+
+        # ---------------------------------------------------------
+        # STAGE 1: CENTRAL BRAIN PIPELINE
+        # ---------------------------------------------------------
+
+        logger.info("Starting intelligence pipeline...")
+
+        try:
+            brain_result = await asyncio.to_thread(
+                self.brain.run,
+                sources,
+                story,
+                topic
+            )
+
+        except Exception as exc:
+            logger.exception(
+                "Brain pipeline failed: %s",
+                exc
+            )
+
+            return {
+                "pipeline_status": "BRAIN_FAILED",
+                "publication_ready": False,
+                "published": False,
+                "error": str(exc)
+            }
+
+        if not isinstance(brain_result, dict):
+            logger.error(
+                "Brain pipeline returned invalid result type: %s",
+                type(brain_result).__name__
+            )
+
+            return {
+                "pipeline_status": "BRAIN_INVALID_RESULT",
+                "publication_ready": False,
+                "published": False,
+                "error": "Brain pipeline returned a non-dictionary result."
+            }
+
+        logger.info("Brain pipeline completed.")
 
         logger.info(
             "Pipeline status: %s",
-            result.get(
+            brain_result.get(
                 "pipeline_status",
                 "UNKNOWN"
             )
         )
 
-        return result
-
-    # =====================================================
-    # STOP
-    # =====================================================
-
-    async def stop(self):
-
-        if not self.running:
-            return
-
-        self.running = False
+        publication_ready = bool(
+            brain_result.get(
+                "publication_ready",
+                False
+            )
+        )
 
         logger.info(
-            "News Factory stopped."
+            "Editorial publication gate: %s",
+            "PASSED" if publication_ready else "NOT PASSED"
         )
 
+        # ---------------------------------------------------------
+        # STAGE 2: EDITORIAL SAFETY GATE
+        # ---------------------------------------------------------
 
-# =========================================================
-# APPLICATION ENTRY POINT
-# =========================================================
+        if not publication_ready:
+            logger.warning(
+                "Story was NOT approved for publication."
+            )
 
-async def main():
+            logger.warning(
+                "Publication pipeline will not publish this story."
+            )
 
-    factory = NewsFactory()
-
-    try:
-
-        await factory.start()
-
-        # -------------------------------------------------
-        # KEEP FACTORY ALIVE
-        # -------------------------------------------------
-
-        while factory.running:
-
-            await asyncio.sleep(5)
-
-    except KeyboardInterrupt:
+            return {
+                **brain_result,
+                "publication_status": "NOT_READY",
+                "published": False
+            }
 
         logger.info(
-            "Shutdown requested by user."
+            "Story passed the central editorial publication gate."
         )
 
-    except Exception as error:
+        # ---------------------------------------------------------
+        # STAGE 3: FACTORY PUBLICATION PIPELINE
+        # ---------------------------------------------------------
 
-        logger.exception(
-            "Factory error: %s",
-            error
+        logger.info(
+            "Sending approved story to FactoryPipeline..."
         )
 
-    finally:
+        try:
+            publication_result = await asyncio.to_thread(
+                self.factory_pipeline.publish,
+                brain_result,
+                "website",
+                False
+            )
 
-        await factory.stop()
+        except Exception as exc:
+            logger.exception(
+                "Publication pipeline failed: %s",
+                exc
+            )
 
+            return {
+                **brain_result,
+                "publication_status": "PUBLISH_FAILED",
+                "published": False,
+                "publication_error": str(exc)
+            }
 
-# =========================================================
-# RUN
-# =========================================================
+        if not isinstance(publication_result, dict):
+            logger.error(
+                "Publication pipeline returned invalid result type: %s",
+                type(publication_result).__name__
+            )
 
-if __name__ == "__main__":
+            return {
+                **brain_result,
+                "publication_status": "PUBLISH_FAILED",
+                "published": False,
+                "publication_error": (
+                    "Publication pipeline returned "
+                    "a non-dictionary result."
+                )
+            }
 
-    asyncio.run(main())
+        # ---------------------------------------------------------
+        # STAGE 4: PUBLICATION RESULT
+        # ---------------------------------------------------------
+
+        publication_status = publication_result.get(
+            "status",
+            "UNKNOWN"
+        )
+
+        published = publication_status == "PUBLISHED"
+
+        logger.info(
+            "Publication pipeline status: %s",
+            publication_status
+        )
+
+        logger.info(
+            "Published: %s",
+            "YES" if published else "NO"
+        )
+
+        return {
+            **brain_result,
+            "publication": publication_result,
+            "publication_status": publication_status,
+            "published": published
+                }
