@@ -260,3 +260,42 @@ class NewsFactory:
             "publication_status": publication_status,
             "published": published
                 }
+    async def stop(self):
+        if not self.running:
+            return
+
+        self.running = False
+
+        logger.info("=" * 70)
+        logger.info("NEWS FACTORY STOPPING")
+        logger.info("=" * 70)
+
+        logger.info("News Factory stopped.")
+
+
+async def main():
+    factory = NewsFactory()
+
+    try:
+        await factory.start()
+
+        while factory.running:
+            await asyncio.sleep(5)
+
+    except KeyboardInterrupt:
+        logger.info(
+            "Shutdown requested by user."
+        )
+
+    except Exception as exc:
+        logger.exception(
+            "News Factory crashed: %s",
+            exc
+        )
+
+    finally:
+        await factory.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
