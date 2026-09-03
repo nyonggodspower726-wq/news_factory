@@ -19,7 +19,7 @@ NIGERIA_TZ=ZoneInfo("Africa/Lagos")
 # EDIT ONLY THIS TIME
 # FORMAT: HH:MM:SS
 # =========================================================
-RUN_TIME="13:52:00"
+RUN_TIME="11:05:00"
 
 NEWS_LIMIT=30
 NEWS_TOPIC=""
