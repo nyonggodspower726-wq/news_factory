@@ -1,483 +1,310 @@
-import os,re,base64,logging,requests
-from pathlib import Path
+"""
+AI NEWS FACTORY
+MEDIA IMAGE ENGINE
 
-logger=logging.getLogger(__name__)
+Responsibilities:
+- Detect existing article images
+- Normalize image metadata
+- Build social media image metadata
+- Validate image URLs
+- Provide the interface expected by MediaManager
+- Delegate generation to ImageGenerator when appropriate
+"""
 
-class ImageGenerator:
-    def __init__(self,api_url=None,api_key=None,model=None,output_dir="media/generated"):
-        self.name="AI News Image Generator"
-        self.version="1.3.0"
-        self.api_url=api_url or os.getenv("IMAGE_API_URL","").strip()
-        self.api_key=api_key or os.getenv("CLOUDFLARE_API_TOKEN","").strip() or os.getenv("IMAGE_API_KEY","").strip()
-        self.model=model or os.getenv("IMAGE_MODEL","").strip()
-        self.output_dir=Path(output_dir)
-        self.timeout=120
+import re
+import requests
 
-    def generate(self,article,platform="website",mode="auto",output_format="png",width=1280,height=720):
-        if not isinstance(article,dict):
-            raise TypeError("Article must be a dictionary.")
+from typing import Any, Dict
 
-        prompt=self.build_prompt(article)
-        story_type=self.story_type(article)
+from media.image_generator import ImageGenerator
 
-        if mode=="licensed":
+
+class ImageEngine:
+
+    def __init__(
+        self,
+        image_generator: ImageGenerator = None
+    ):
+        self.name = "Media Image Engine"
+        self.version = "2.0.0"
+
+        self.image_generator = (
+            image_generator
+            or ImageGenerator()
+        )
+
+    # =========================================================
+    # ARTICLE MEDIA
+    # =========================================================
+
+    def build_article_media(
+        self,
+        story: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        if not isinstance(story, dict):
+            raise TypeError(
+                "Story must be a dictionary."
+            )
+
+        image_url = self._clean(
+            story.get(
+                "image_url",
+                story.get(
+                    "image",
+                    story.get(
+                        "imageUrl",
+                        ""
+                    )
+                )
+            )
+        )
+
+        if image_url:
+
             return {
-                "status":"LICENSE_REQUIRED",
-                "generated":False,
-                "prompt":prompt
+                "image_url": image_url,
+                "has_image": True,
+                "alt": self._clean(
+                    story.get(
+                        "image_alt",
+                        story.get(
+                            "alt",
+                            self.image_generator.create_alt_text(
+                                story
+                            )
+                        )
+                    )
+                ),
+                "credit": self._clean(
+                    story.get(
+                        "image_credit",
+                        story.get(
+                            "credit",
+                            ""
+                        )
+                    )
+                ),
+                "source_url": self._clean(
+                    story.get(
+                        "image_source_url",
+                        story.get(
+                            "source_url",
+                            ""
+                        )
+                    )
+                ),
+                "caption": self._clean(
+                    story.get(
+                        "image_caption",
+                        story.get(
+                            "caption",
+                            ""
+                        )
+                    )
+                ),
+                "source_type": self._clean(
+                    story.get(
+                        "image_source_type",
+                        "EXISTING"
+                    )
+                ),
+                "local_path": self._clean(
+                    story.get(
+                        "image_local_path",
+                        story.get(
+                            "local_path",
+                            ""
+                        )
+                    )
+                )
             }
 
-        if not self.api_url or not self.api_key:
+        return {
+            "image_url": "",
+            "has_image": False,
+            "alt": self.image_generator.create_alt_text(
+                story
+            ),
+            "credit": "",
+            "source_url": self._clean(
+                story.get(
+                    "source_url",
+                    ""
+                )
+            ),
+            "caption": "",
+            "source_type": "NONE",
+            "local_path": ""
+        }
+
+    # =========================================================
+    # SOCIAL MEDIA
+    # =========================================================
+
+    def build_social_media(
+        self,
+        image_url: str = "",
+        title: str = "",
+        source: str = ""
+    ) -> Dict[str, Any]:
+
+        image_url = self._clean(image_url)
+        title = self._clean(title)
+        source = self._clean(source)
+
+        return {
+            "status": "READY",
+            "has_image": bool(image_url),
+            "image_url": image_url,
+            "title": title,
+            "source": source,
+            "alt_text": (
+                title
+                or "News image"
+            )
+        }
+
+    # =========================================================
+    # IMAGE VALIDATION
+    # =========================================================
+
+    def validate(
+        self,
+        image_url: str
+    ) -> Dict[str, Any]:
+
+        image_url = self._clean(
+            image_url
+        )
+
+        if not image_url:
+
             return {
-                "status":"NOT_CONFIGURED",
-                "generated":False,
-                "prompt":prompt
+                "valid": False,
+                "content_type": "",
+                "error": "Image URL is empty."
+            }
+
+        if image_url.startswith(
+            "data:image"
+        ):
+
+            return {
+                "valid": True,
+                "content_type": "image",
+                "error": ""
+            }
+
+        if image_url.startswith(
+            "/"
+        ) or image_url.startswith(
+            "media/"
+        ):
+
+            return {
+                "valid": True,
+                "content_type": "image",
+                "error": ""
+            }
+
+        if not image_url.startswith(
+            (
+                "http://",
+                "https://"
+            )
+        ):
+
+            return {
+                "valid": False,
+                "content_type": "",
+                "error": "Invalid image URL."
             }
 
         try:
-            r=requests.post(
-                self.api_url,
-                headers=self._headers(),
-                json={
-                    "prompt":prompt,
-                    "width":width,
-                    "height":height
-                },
-                timeout=self.timeout
+
+            response = requests.head(
+                image_url,
+                allow_redirects=True,
+                timeout=15,
+                headers={
+                    "User-Agent":
+                        "AI-News-Factory/2.0"
+                }
             )
-            r.raise_for_status()
 
-            image=self._extract(r)
+            content_type = (
+                response.headers
+                .get(
+                    "Content-Type",
+                    ""
+                )
+                .lower()
+            )
 
-            if not image:
+            if response.ok and (
+                content_type.startswith(
+                    "image/"
+                )
+                or not content_type
+            ):
+
                 return {
-                    "status":"FAILED",
-                    "generated":False,
-                    "prompt":prompt,
-                    "error":"Empty image response."
+                    "valid": True,
+                    "content_type":
+                        content_type,
+                    "error": ""
                 }
 
-            path=self._save(image,article,output_format)
-
             return {
-                "status":"IMAGE_READY",
-                "generated":True,
-                "image_url":self._public_url(path),
-                "local_path":str(path),
-                "prompt":prompt,
-                "story_type":story_type,
-                "platform":platform,
-                "width":width,
-                "height":height,
-                "alt_text":self.alt(article),
-                "caption":self.caption(article),
-                "credit":"AI-generated editorial illustration"
+                "valid": False,
+                "content_type":
+                    content_type,
+                "error":
+                    f"HTTP {response.status_code}"
             }
 
-        except requests.HTTPError as e:
+        except Exception as exc:
+
             return {
-                "status":"FAILED",
-                "generated":False,
-                "prompt":prompt,
-                "error":str(e),
-                "http_status":e.response.status_code if e.response is not None else None
+                "valid": False,
+                "content_type": "",
+                "error": str(exc)
             }
 
-        except Exception as e:
-            logger.exception("Image generation failed")
-            return {
-                "status":"FAILED",
-                "generated":False,
-                "prompt":prompt,
-                "error":str(e)
-            }
+    # =========================================================
+    # STATUS
+    # =========================================================
 
-    def build_prompt(self,article):
-        title=self._text(article.get("title",article.get("headline","")))
-        summary=self._text(
-            article.get(
-                "excerpt",
-                article.get(
-                    "summary",
-                    article.get("lead","")
-                )
-            )
-        )
-        topic=self._text(
-            article.get(
-                "topic",
-                article.get("category","general")
-            )
-        )
-        location=self._text(article.get("location",""))
-        style=self.story_type(article)
+    def status(self) -> Dict[str, Any]:
 
-        return self._clean(
-            f"Create a premium editorial news image for a professional digital newsroom. "
-            f"Use the following story information only to understand the visual subject. "
-            f"Story subject: {title}. "
-            f"Topic: {topic}. "
-            f"Context: {summary}. "
-            f"Location: {location}. "
-            f"Story type: {style}. "
-            f"Create an original, realistic, sophisticated documentary-style editorial photograph "
-            f"with strong composition, natural lighting, realistic people and environments where appropriate. "
-            f"The image must visually communicate the story without reproducing written information. "
-            f"ABSOLUTELY NO TEXT IN THE IMAGE. "
-            f"Do not generate words, letters, numbers, headlines, captions, subtitles, newspaper pages, "
-            f"magazine pages, books, documents, articles, signs, labels, logos, watermarks, UI text, "
-            f"computer screen text, phone screen text, charts with labels, symbols resembling writing, "
-            f"or any readable typography. "
-            f"If screens, papers, signs or displays appear naturally in the scene, keep them blank, "
-            f"abstract, blurred or visually unreadable. "
-            f"Do not create fake evidence, fake documents, misleading proof or graphic content. "
-            f"Visual storytelling only. Clean premium newsroom aesthetic."
-        )
-
-    def story_type(self,article):
-        text=self._text(
-            " ".join(
-                str(article.get(k,""))
-                for k in (
-                    "title",
-                    "headline",
-                    "topic",
-                    "category",
-                    "content",
-                    "excerpt"
-                )
-            )
-        ).lower()
-
-        groups={
-            "politics":[
-                "president",
-                "minister",
-                "government",
-                "election",
-                "parliament",
-                "senate",
-                "political",
-                "policy"
-            ],
-            "business":[
-                "business",
-                "company",
-                "market",
-                "stock",
-                "economy",
-                "economic",
-                "investment",
-                "bank"
-            ],
-            "technology":[
-                "technology",
-                "software",
-                "ai",
-                "artificial intelligence",
-                "cyber",
-                "robot",
-                "chip",
-                "app"
-            ],
-            "sports":[
-                "football",
-                "soccer",
-                "basketball",
-                "tennis",
-                "sports",
-                "league",
-                "match",
-                "coach",
-                "player"
-            ],
-            "crime":[
-                "police",
-                "arrest",
-                "murder",
-                "crime",
-                "court",
-                "suspect",
-                "investigation"
-            ],
-            "health":[
-                "doctor",
-                "hospital",
-                "disease",
-                "health",
-                "medical",
-                "virus",
-                "medicine"
-            ],
-            "breaking_news":[
-                "breaking",
-                "explosion",
-                "earthquake",
-                "flood",
-                "fire",
-                "crash",
-                "attack"
-            ]
-        }
-
-        scores={
-            k:sum(w in text for w in words)
-            for k,words in groups.items()
-        }
-
-        best=max(scores,key=scores.get)
-
-        return best if scores[best]>0 else "general"
-
-    def alt(self,article):
-        return self._text(
-            article.get(
-                "title",
-                article.get("headline","News image")
-            )
-        )[:125]
-
-    def caption(self,article):
-        t=self._text(
-            article.get(
-                "title",
-                article.get("headline","")
-            )
-        )
-
-        return (
-            f"Editorial image illustrating: {t}"
-            if t
-            else "Editorial news image."
-        )
-
-    def generate_prompt_only(self,article):
         return {
-            "status":"PROMPT_READY",
-            "prompt":self.build_prompt(article),
-            "story_type":self.story_type(article),
-            "alt_text":self.alt(article),
-            "caption":self.caption(article)
+            "engine": self.name,
+            "version": self.version,
+            "status": "READY",
+            "generator":
+                self.image_generator.status()
         }
 
-    def _headers(self):
-        return {
-            "Authorization":f"Bearer {self.api_key}",
-            "Content-Type":"application/json",
-            "Accept":"image/png,image/jpeg,image/webp,application/octet-stream",
-            "User-Agent":"AI-News-Factory/1.3"
-        }
+    # =========================================================
+    # HELPERS
+    # =========================================================
 
-    def _extract(self,response):
-        data=response.content
+    def _clean(
+        self,
+        value: Any
+    ) -> str:
 
-        if not data:
-            return None
-
-        ct=response.headers.get("Content-Type","").lower()
-
-        if (
-            ct.startswith("image/")
-            or data.startswith(b"\x89PNG")
-            or data.startswith(b"\xff\xd8\xff")
-            or data.startswith(b"RIFF")
-        ):
-            return data
-
-        try:
-            obj=response.json()
-        except ValueError:
-            return data
-
-        return self._json_image(obj)
-
-    def _json_image(self,obj):
-        if isinstance(obj,dict):
-            for k in (
-                "image",
-                "image_url",
-                "url",
-                "b64_json",
-                "data",
-                "result"
-            ):
-                v=obj.get(k)
-
-                if isinstance(v,(dict,list)):
-                    x=self._json_image(v)
-                    if x:
-                        return x
-
-                elif isinstance(v,str):
-                    if v.startswith(("http://","https://")):
-                        r=requests.get(
-                            v,
-                            timeout=self.timeout
-                        )
-                        r.raise_for_status()
-                        return r.content
-
-                    return v
-
-        if isinstance(obj,list):
-            for v in obj:
-                x=self._json_image(v)
-                if x:
-                    return x
-
-        return None
-
-    def _save(self,image,article,fmt):
-        self.output_dir.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        title=self._text(
-            article.get(
-                "title",
-                article.get("headline","news")
-            )
-        ).lower()
-
-        slug=re.sub(
-            r"[^a-z0-9]+",
-            "-",
-            title
-        ).strip("-")[:70] or "news"
-
-        ext=(
-            "jpg"
-            if fmt.lower() in ("jpg","jpeg")
-            else "png"
-        )
-
-        path=self.output_dir/f"{slug}_{abs(hash(title))%100000}.{ext}"
-
-        if isinstance(image,(bytes,bytearray)):
-            path.write_bytes(bytes(image))
-
-        elif isinstance(image,str):
-
-            if image.startswith(("http://","https://")):
-                r=requests.get(
-                    image,
-                    timeout=self.timeout
-                )
-                r.raise_for_status()
-                path.write_bytes(r.content)
-
-            else:
-                if image.startswith("data:image"):
-                    image=image.split(",",1)[1]
-
-                path.write_bytes(
-                    base64.b64decode(image)
-                )
-
-        else:
-            raise ValueError(
-                "Unsupported image response."
-            )
-
-        return path
-
-    def _public_url(self,path):
-        base=os.getenv(
-            "MEDIA_PUBLIC_BASE_URL",
-            ""
-        ).rstrip("/")
-
-        if base:
-            return f"{base}/media/generated/{path.name}"
-
-        return f"/media/generated/{path.name}"
-
-    def validate_result(self,result):
-        return (
-            isinstance(result,dict)
-            and result.get("status")=="IMAGE_READY"
-            and bool(result.get("image_url"))
-        )
-
-    def _text(self,value):
         if value is None:
             return ""
 
-        if isinstance(value,dict):
-            return " ".join(
-                str(v)
-                for v in value.values()
-                if v
-            )
-
-        if isinstance(value,list):
-            return " ".join(
-                str(v)
-                for v in value
-                if v
-            )
-
         return str(value).strip()
 
-    def _clean(self,text):
-        return re.sub(
-            r"\s+",
-            " ",
-            str(text or "")
-        ).strip()
 
-    def status(self):
-        token=os.getenv(
-            "CLOUDFLARE_API_TOKEN",
-            ""
-        ).strip()
+def create_image_engine(
+    image_generator: ImageGenerator = None
+) -> ImageEngine:
 
-        key=os.getenv(
-            "IMAGE_API_KEY",
-            ""
-        ).strip()
-
-        source=(
-            "CLOUDFLARE_API_TOKEN"
-            if token
-            else (
-                "IMAGE_API_KEY"
-                if key
-                else "NONE"
-            )
-        )
-
-        configured=bool(
-            self.api_url
-            and self.api_key
-        )
-
-        return {
-            "engine":self.name,
-            "version":self.version,
-            "status":"READY" if configured else "NOT_CONFIGURED",
-            "configured":configured,
-            "credential_source":source
-        }
-
-image_generator=ImageGenerator()
-
-def generate_news_image(
-    article,
-    platform="website",
-    mode="auto",
-    width=1280,
-    height=720
-):
-    return image_generator.generate(
-        article,
-        platform,
-        mode,
-        "png",
-        width,
-        height
-    )
-
-def build_image_prompt(article):
-    return image_generator.generate_prompt_only(article)
+    return ImageEngine(
+        image_generator=image_generator
+                        )
