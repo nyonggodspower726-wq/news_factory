@@ -58,3 +58,96 @@ class ImageGenerator:
  def create_caption(self,article):
   title=self._text(article.get("title",article.get("headline","")))
   return f"Editorial image illustrating: {title}" if title else "Editorial news image."
+def generate_prompt_only(self,article):
+  return {"status":"PROMPT_READY","prompt":self.build_prompt(article),"story_type":self.story_type(article),"alt_text":self.create_alt_text(article),"caption":self.create_caption(article)}
+
+ def _payload(self,prompt,width,height,output_format):
+  return {"prompt":prompt,"width":width,"height":height}
+
+ def _headers(self):
+  return {"Authorization":f"Bearer {self.api_key}","Content-Type":"application/json","Accept":"image/png,image/jpeg,image/webp,application/octet-stream","User-Agent":"AI-News-Factory/1.2"}
+
+ def _extract_image_response(self,response):
+  content=response.content
+  if not content:return None
+  ct=response.headers.get("Content-Type","").lower()
+  if ct.startswith("image/") or content.startswith(b"\x89PNG") or content.startswith(b"\xff\xd8\xff") or content.startswith(b"RIFF"):return content
+  try:data=response.json()
+  except ValueError:return content
+  encoded=self._extract_image_from_json(data)
+  if not encoded:return None
+  if isinstance(encoded,bytes):return encoded
+  if isinstance(encoded,str):
+   if encoded.startswith(("http://","https://")):
+    r=requests.get(encoded,timeout=self.timeout);r.raise_for_status();return r.content
+   if encoded.startswith("data:image"):encoded=encoded.split(",",1)[1]
+   try:return base64.b64decode(encoded)
+   except Exception:return None
+  return None
+
+ def _extract_image_from_json(self,data):
+  if not isinstance(data,dict):return None
+  for key in ("image","image_url","url","b64_json","data","result"):
+   value=data.get(key)
+   if isinstance(value,dict):
+    x=self._extract_image_from_json(value)
+    if x:return x
+   elif isinstance(value,list):
+    for item in value:
+     if isinstance(item,dict):
+      x=self._extract_image_from_json(item)
+      if x:return x
+     elif isinstance(item,str):return item
+   elif isinstance(value,str):return value
+  return None
+
+ def _save(self,image,article,output_format):
+  self.output_dir.mkdir(parents=True,exist_ok=True)
+  title=self._text(article.get("title",article.get("headline","news"))).lower()
+  slug=re.sub(r"[^a-z0-9]+","-",title).strip("-")[:70] or "news"
+  ext="jpg" if output_format.lower() in ("jpg","jpeg") else "png"
+  path=self.output_dir/f"{slug}_{abs(hash(title))%100000}.{ext}"
+  if isinstance(image,(bytes,bytearray)):path.write_bytes(bytes(image))
+  elif isinstance(image,str):
+   if image.startswith(("http://","https://")):
+    r=requests.get(image,timeout=self.timeout);r.raise_for_status();path.write_bytes(r.content)
+   else:
+    if image.startswith("data:image"):image=image.split(",",1)[1]
+    path.write_bytes(base64.b64decode(image))
+  else:raise ValueError("Unsupported image response.")
+  return path
+
+ def _public_url(self,path):
+  base=os.getenv("MEDIA_PUBLIC_BASE_URL","").rstrip("/")
+  return f"{base}/{path.name}" if base else str(path)
+
+ def validate_result(self,result):
+  return isinstance(result,dict) and result.get("status")=="IMAGE_READY" and bool(result.get("image_url"))
+
+ def _text(self,value):
+  if value is None:return ""
+  if isinstance(value,dict):return " ".join(str(v) for v in value.values() if v)
+  if isinstance(value,list):return " ".join(str(v) for v in value if v)
+  return str(value).strip()
+
+ def _clean(self,text):
+  return re.sub(r"\s+"," ",str(text or "")).strip()
+
+ def status(self):
+  cf=os.getenv("CLOUDFLARE_API_TOKEN","").strip()
+  ik=os.getenv("IMAGE_API_KEY","").strip()
+  source="CLOUDFLARE_API_TOKEN" if cf else ("IMAGE_API_KEY" if ik else "NONE")
+  return {"engine":self.name,"version":self.version,"status":"READY" if self.api_url and self.api_key else "NOT_CONFIGURED","configured":bool(self.api_url and self.api_key),"credential_source":source}
+
+
+image_generator=ImageGenerator()
+
+def generate_news_image(article,platform="website",mode="auto",width=1280,height=720):
+ return image_generator.generate(article,platform,mode,"png",width,height)
+
+def build_image_prompt(article):
+ return image_generator.generate_prompt_only(article)
+
+if __name__=="__main__":
+ test={"title":"Officials announce a new development","topic":"breaking news","excerpt":"Officials announced a new development today.","location":"Lagos"}
+ print(build_image_prompt(test))
