@@ -1,330 +1,584 @@
-import os,re,base64,logging,requests
-from pathlib import Path
+from __future__ import annotations
 
-logger=logging.getLogger(__name__)
+import inspect
+import logging
+import os
+import re
+import requests
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-class ImageGenerator:
-    def __init__(self,api_url=None,api_key=None,model=None,output_dir="media/generated"):
-        self.name="AI News Image Generator"
-        self.version="1.3.0"
-        self.api_url=api_url or os.getenv("IMAGE_API_URL","").strip()
-        self.api_key=api_key or os.getenv("CLOUDFLARE_API_TOKEN","").strip() or os.getenv("IMAGE_API_KEY","").strip()
-        self.model=model or os.getenv("IMAGE_MODEL","").strip()
-        self.output_dir=Path(output_dir)
-        self.timeout=120
+from brain.claim_engine import ClaimEngine
+from brain.corroboration_engine import CorroborationEngine
+from brain.fact_checker import FactChecker
+from brain.story_synthesis_engine import StorySynthesisEngine
+from brain.journalist_engine import JournalistEngine
+from brain.headline_engine import HeadlineEngine
+from brain.editor_engine import EditorEngine
+from brain.story_analyzer import StoryAnalyzer
+from brain.source_intelligence_engine import SourceIntelligenceEngine
+from brain.source_graph_engine import SourceGraphEngine
+from brain.significance_engine import SignificanceEngine
+from brain.angle_finder import AngleFinder
+from brain.reader_psychology_engine import ReaderPsychologyEngine
+from brain.engagement_engine import EngagementEngine
+from brain.narrative_engine import NarrativeEngine
+from brain.event_resolution_engine import EventResolutionEngine
+from brain.evidence_engine import EvidenceEngine
+from brain.investigation_engine import InvestigationEngine
+from brain.misinformation_engine import MisinformationEngine
+from brain.source_verification import SourceVerificationEngine
+from brain.story_cluster import StoryCluster
+from brain.psychology_engine import PsychologyEngine
+if TYPE_CHECKING:
+    from factory_pipeline import FactoryPipeline
 
-    def generate(self,article,platform="website",mode="auto",output_format="png",width=1280,height=720):
-        if not isinstance(article,dict):
-            raise TypeError("Article must be a dictionary.")
-        prompt=self.build_prompt(article)
-        story_type=self.story_type(article)
-        if mode=="licensed":
-            return {"status":"LICENSE_REQUIRED","generated":False,"prompt":prompt}
-        if not self.api_url or not self.api_key:
-            return {"status":"NOT_CONFIGURED","generated":False,"prompt":prompt}
+logger = logging.getLogger("NewsFactory.BrainPipeline")
+
+
+class NvidiaBrainClient:
+    def __init__(
+        self,
+        model: str = "meta/llama-3.3-70b-instruct",
+        base_url: str = "https://integrate.api.nvidia.com/v1",
+    ):
+        self.name = "NVIDIA Brain Client"
+        self.version = "2.3.0"
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.api_keys = [
+            os.getenv("NVIDIA_API_KEY_1", "").strip(),
+            os.getenv("NVIDIA_API_KEY_2", "").strip(),
+            os.getenv("NVIDIA_API_KEY_3", "").strip(),
+            os.getenv("NVIDIA_API_KEY_4", "").strip(),
+        ]
+        self.api_keys = [key for key in self.api_keys if key]
+        self.current_key_index = 0
         try:
-            r=requests.post(
-                self.api_url,
-                headers=self._headers(),
-                json={"prompt":prompt,"width":width,"height":height},
-                timeout=self.timeout
+            self.timeout = int(os.getenv("NVIDIA_TIMEOUT", "60"))
+        except (TypeError, ValueError):
+            self.timeout = 60
+
+    def status(self) -> Dict[str, Any]:
+        return {
+            "provider": "NVIDIA",
+            "client": self.name,
+            "version": self.version,
+            "model": self.model,
+            "configured_keys": len(self.api_keys),
+            "configured": bool(self.api_keys),
+            "failover_enabled": len(self.api_keys) > 1,
+            "current_key_slot": (
+                self.current_key_index + 1 if self.api_keys else None
+            ),
+        }
+
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.2,
+        max_tokens: int = 1500,
+    ) -> str:
+        if not self.api_keys:
+            raise RuntimeError(
+                "No NVIDIA API keys configured. "
+                "Set NVIDIA_API_KEY_1 in the environment."
             )
-            r.raise_for_status()
-            image=self._extract(r)
-            if not image:
-                return {
-                    "status":"FAILED",
-                    "generated":False,
-                    "prompt":prompt,
-                    "error":"Empty image response."
-                }
-            path=self._save(image,article,output_format)
-            return {
-                "status":"IMAGE_READY",
-                "generated":True,
-                "image_url":self._public_url(path),
-                "local_path":str(path),
-                "prompt":prompt,
-                "story_type":story_type,
-                "platform":platform,
-                "width":width,
-                "height":height,
-                "alt_text":self.alt(article),
-                "caption":self.caption(article),
-                "credit":"AI-generated editorial illustration"
-            }
-        except requests.HTTPError as e:
-            return {
-                "status":"FAILED",
-                "generated":False,
-                "prompt":prompt,
-                "error":str(e),
-                "http_status":e.response.status_code if e.response is not None else None
-            }
-        except Exception as e:
-            logger.exception("Image generation failed")
-            return {
-                "status":"FAILED",
-                "generated":False,
-                "prompt":prompt,
-                "error":str(e)
-            }
 
-    def build_prompt(self,article):
-        title=self._text(article.get("title",article.get("headline","")))
-        summary=self._text(article.get("excerpt",article.get("summary",article.get("lead",""))))
-        topic=self._text(article.get("topic",article.get("category","general")))
-        location=self._text(article.get("location",""))
-        style=self.story_type(article)
+        if not isinstance(messages, list) or not messages:
+            raise ValueError("messages must be a non-empty list.")
 
-        return self._clean(
-            f"Create a premium editorial news photograph for a professional international news website. "
-            f"Use realistic documentary photography and sophisticated cinematic composition. "
-            f"Create a visual scene that represents the subject of this verified news story. "
-            f"Visual subject: {title}. "
-            f"Topic: {topic}. "
-            f"Story context for visual interpretation only: {summary}. "
-            f"Location: {location}. "
-            f"Story type: {style}. "
-            f"Show the people, environment, objects, technology, architecture, or events that naturally represent the story. "
-            f"Make the image visually powerful, realistic, credible, modern and suitable for a premium newsroom. "
-            f"IMPORTANT: THE IMAGE MUST CONTAIN ZERO TEXT. "
-            f"Do not generate any words, letters, numbers, headlines, captions, subtitles, typography, "
-            f"newspaper pages, magazine pages, books, documents, articles, text messages, website pages, "
-            f"computer screens with writing, phone screens with writing, signs, banners, posters, labels, "
-            f"logos, trademarks, watermarks, charts with labels, interface text, handwriting or readable writing. "
-            f"If a screen, sign, newspaper, document or display naturally appears in the scene, keep it blank, "
-            f"abstract or out of focus with no readable characters. "
-            f"Do not invent fake evidence or fake documents. "
-            f"Do not depict misleading proof. "
-            f"Do not include graphic or disturbing content. "
-            f"Visual storytelling only. No typography anywhere in the image."
+        last_error = None
+        total = len(self.api_keys)
+
+        for attempt in range(total):
+            index = (self.current_key_index + attempt) % total
+            key = self.api_keys[index]
+
+            try:
+                result = self._request(
+                    key,
+                    messages,
+                    temperature,
+                    max_tokens,
+                )
+                self.current_key_index = index
+                return result
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "NVIDIA key slot %s/%s failed: %s",
+                    index + 1,
+                    total,
+                    exc,
+                )
+
+        raise RuntimeError(
+            f"All NVIDIA API keys failed. Last error: {last_error}"
         )
 
-    def story_type(self,article):
-        text=self._text(
-            " ".join(
-                str(article.get(k,""))
-                for k in ("title","headline","topic","category","content","excerpt")
-            )
-        ).lower()
+    def _request(
+        self,
+        api_key: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        response = requests.post(
+            self.base_url + "/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json={
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            timeout=self.timeout,
+        )
 
-        groups={
-            "politics":[
-                "president","minister","government","election",
-                "parliament","senate","political","policy"
-            ],
-            "business":[
-                "business","company","market","stock","economy",
-                "economic","investment","bank"
-            ],
-            "technology":[
-                "technology","software","ai","artificial intelligence",
-                "cyber","robot","chip","app"
-            ],
-            "sports":[
-                "football","soccer","basketball","tennis",
-                "sports","league","match","coach","player"
-            ],
-            "crime":[
-                "police","arrest","murder","crime","court",
-                "suspect","investigation"
-            ],
-            "health":[
-                "doctor","hospital","disease","health","medical",
-                "virus","medicine"
-            ],
-            "breaking_news":[
-                "breaking","explosion","earthquake","flood",
-                "fire","crash","attack"
-            ]
-        }
+        response.raise_for_status()
+        data = response.json()
 
-        scores={k:sum(w in text for w in words) for k,words in groups.items()}
-        best=max(scores,key=scores.get)
-        return best if scores[best]>0 else "general"
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError("NVIDIA API returned no choices.")
 
-    def alt(self,article):
-        return self._text(
-            article.get("title",article.get("headline","News image"))
-        )[:125]
+        message = choices[0].get("message", {})
+        content = message.get("content")
 
-    def caption(self,article):
-        t=self._text(article.get("title",article.get("headline","")))
-        return f"Editorial image illustrating: {t}" if t else "Editorial news image."
+        if not content:
+            raise RuntimeError("NVIDIA API returned empty content.")
 
-    def generate_prompt_only(self,article):
-        return {
-            "status":"PROMPT_READY",
-            "prompt":self.build_prompt(article),
-            "story_type":self.story_type(article),
-            "alt_text":self.alt(article),
-            "caption":self.caption(article)
-        }
+        return str(content).strip()
 
-    def _headers(self):
-        return {
-            "Authorization":f"Bearer {self.api_key}",
-            "Content-Type":"application/json",
-            "Accept":"image/png,image/jpeg,image/webp,application/octet-stream",
-            "User-Agent":"AI-News-Factory/1.3"
-        }
 
-    def _extract(self,response):
-        data=response.content
-        if not data:
-            return None
+class BrainPipeline:
+    def __init__(self, factory_pipeline: Optional[FactoryPipeline] = None):
+        logger.info("Initializing central brain...")
 
-        ct=response.headers.get("Content-Type","").lower()
+        self.version = "2.3.0"
+        self.ai = NvidiaBrainClient()
 
-        if (
-            ct.startswith("image/")
-            or data.startswith(b"\x89PNG")
-            or data.startswith(b"\xff\xd8\xff")
-            or data.startswith(b"RIFF")
-        ):
-            return data
+        self.story_analyzer = StoryAnalyzer()
+        self.source_intelligence = SourceIntelligenceEngine()
+        self.source_verification = SourceVerificationEngine()
+        self.story_cluster = StoryCluster()
+        self.event_resolution = EventResolutionEngine()
 
-        try:
-            obj=response.json()
-        except ValueError:
-            return data
+        self.claim_engine = ClaimEngine()
+        self.evidence = EvidenceEngine()
+        self.source_graph = SourceGraphEngine()
+        self.corroboration = CorroborationEngine()
+        self.fact_checker = FactChecker()
+        self.investigation = InvestigationEngine()
+        self.misinformation = MisinformationEngine()
 
-        return self._json_image(obj)
+        self.story_synthesis = StorySynthesisEngine()
+        self.significance = SignificanceEngine()
+        self.angle_finder = AngleFinder()
+        self.reader_psychology = ReaderPsychologyEngine()
+        self.psychology = PsychologyEngine()
+        self.engagement = EngagementEngine()
+        self.narrative = NarrativeEngine()
 
-    def _json_image(self,obj):
-        if isinstance(obj,dict):
-            for k in ("image","image_url","url","b64_json","data","result"):
-                v=obj.get(k)
+        self.journalist = JournalistEngine()
+        self.headline = HeadlineEngine()
+        self.editor = EditorEngine()
 
-                if isinstance(v,(dict,list)):
-                    x=self._json_image(v)
-                    if x:
-                        return x
-
-                elif isinstance(v,str):
-                    if v.startswith(("http://","https://")):
-                        r=requests.get(v,timeout=self.timeout)
-                        r.raise_for_status()
-                        return r.content
-                    return v
-
-        if isinstance(obj,list):
-            for v in obj:
-                x=self._json_image(v)
-                if x:
-                    return x
-
-        return None
-
-    def _save(self,image,article,fmt):
-        self.output_dir.mkdir(parents=True,exist_ok=True)
-
-        title=self._text(
-            article.get("title",article.get("headline","news"))
-        ).lower()
-
-        slug=re.sub(
-            r"[^a-z0-9]+",
-            "-",
-            title
-        ).strip("-")[:70] or "news"
-
-        ext="jpg" if fmt.lower() in ("jpg","jpeg") else "png"
-
-        path=self.output_dir/f"{slug}_{abs(hash(title))%100000}.{ext}"
-
-        if isinstance(image,(bytes,bytearray)):
-            path.write_bytes(bytes(image))
-
-        elif isinstance(image,str):
-            if image.startswith(("http://","https://")):
-                r=requests.get(image,timeout=self.timeout)
-                r.raise_for_status()
-                path.write_bytes(r.content)
-            else:
-                if image.startswith("data:image"):
-                    image=image.split(",",1)[1]
-                path.write_bytes(base64.b64decode(image))
-
+        if factory_pipeline is not None:
+            self.factory_pipeline = factory_pipeline
         else:
-            raise ValueError("Unsupported image response.")
+            from factory_pipeline import FactoryPipeline
+            self.factory_pipeline = FactoryPipeline()
 
-        return path
+        logger.info("Central brain initialized with full intelligence stack.")
 
-    def _public_url(self,path):
-        base=os.getenv("MEDIA_PUBLIC_BASE_URL","").rstrip("/")
-        return f"{base}/{path.name}" if base else str(path)
+    def status(self) -> Dict[str, Any]:
+        names = [
+            "story_analyzer",
+            "source_intelligence",
+            "source_verification",
+            "story_cluster",
+            "event_resolution",
+            "claim_engine",
+            "evidence",
+            "source_graph",
+            "corroboration",
+            "fact_checker",
+            "investigation",
+            "misinformation",
+            "story_synthesis",
+            "significance",
+            "angle_finder",
+            "reader_psychology",
+            "psychology",
+            "engagement",
+            "narrative",
+            "journalist",
+            "headline",
+            "editor",
+        ]
 
-    def validate_result(self,result):
-        return (
-            isinstance(result,dict)
-            and result.get("status")=="IMAGE_READY"
-            and bool(result.get("image_url"))
-        )
-
-    def _text(self,value):
-        if value is None:
-            return ""
-
-        if isinstance(value,dict):
-            return " ".join(
-                str(v)
-                for v in value.values()
-                if v
-            )
-
-        if isinstance(value,list):
-            return " ".join(
-                str(v)
-                for v in value
-                if v
-            )
-
-        return str(value).strip()
-
-    def _clean(self,text):
-        return re.sub(
-            r"\s+",
-            " ",
-            str(text or "")
-        ).strip()
-
-    def status(self):
-        token=os.getenv("CLOUDFLARE_API_TOKEN","").strip()
-        key=os.getenv("IMAGE_API_KEY","").strip()
-
-        source=(
-            "CLOUDFLARE_API_TOKEN"
-            if token
-            else ("IMAGE_API_KEY" if key else "NONE")
-        )
-
-        return {
-            "engine":self.name,
-            "version":self.version,
-            "status":"READY" if self.api_url and self.api_key else "NOT_CONFIGURED",
-            "configured":bool(self.api_url and self.api_key),
-            "credential_source":source
+        components = {
+            name: self._component_ready(getattr(self, name, None))
+            for name in names
         }
 
-image_generator=ImageGenerator()
+        return {
+            "status": "READY",
+            "engine": "BrainPipeline",
+            "version": self.version,
+            "initialized": True,
+            "total_brains": len(names),
+            "loaded_brains": [
+                name for name, ready in components.items() if ready
+            ],
+            "brains": components,
+            "ai_provider": self.ai.status(),
+            "factory_pipeline": self._component_status(
+                self.factory_pipeline
+            ),
+        }
 
-def generate_news_image(
-    article,
-    platform="website",
-    mode="auto",
-    width=1280,
-    height=720
-):
-    return image_generator.generate(
-        article,
-        platform,
-        mode,
-        "png",
-        width,
-        height
-    )
+    def run(
+        self,
+        sources: List[Dict[str, Any]],
+        story: Optional[Dict[str, Any]] = None,
+        topic: str = "",
+        platform: str = "website",
+        prepare_publication: bool = True,
+    ) -> Dict[str, Any]:
+        sources = sources if isinstance(sources, list) else []
+        story = self._safe_dict(story)
 
-def build_image_prompt(article):
-    return image_generator.generate_prompt_only(article)
+        package = {
+            "story": story,
+            "sources": sources,
+            "topic": topic or "",
+            "claims": [],
+            "claim_analysis": {},
+            "evidence": {},
+            "verification": {},
+            "source_verification": {},
+            "corroboration": {},
+            "source_graph": {},
+            "source_intelligence": {},
+            "cluster": {},
+            "event_resolution": {},
+            "investigation": {},
+            "misinformation": {},
+            "significance": {},
+            "angles": {},
+            "psychology": {},
+            "reader_psychology": {},
+            "engagement": {},
+            "narrative": {},
+            "synthesis": {},
+            "story_model": {},
+            "article_plan": {},
+            "article": {},
+            "headline": {},
+            "editorial": {},
+            "publication": {},
+            "publication_ready": False,
+            "ai": self.ai,
+        }
+
+        logger.info("=" * 70)
+        logger.info("CENTRAL BRAIN PIPELINE STARTED")
+        logger.info("=" * 70)
+
+        try:
+            package["story_analysis"] = self._safe(
+                "story_analysis",
+                self.story_analyzer,
+                ["analyze"],
+                {"story": package["story"]},
+            )
+
+            if isinstance(package["story_analysis"], dict):
+                analyzed_story = package["story_analysis"].get("story")
+                if isinstance(analyzed_story, dict):
+                    package["story"].update(analyzed_story)
+
+            package["source_intelligence"] = self._safe(
+                "source_intelligence",
+                self.source_intelligence,
+                ["analyze"],
+                {"sources": sources},
+            )
+
+            package["source_verification"] = self._safe(
+                "source_verification",
+                self.source_verification,
+                ["analyze", "verify"],
+                {"sources": sources},
+            )
+
+            package["cluster"] = self._safe(
+                "story_cluster",
+                self.story_cluster,
+                ["cluster_stories", "cluster", "analyze"],
+                {
+                    "stories": sources,
+                    "sources": sources,
+                    "story": package["story"],
+                },
+            )
+
+            events = self._build_events(
+                sources,
+                package["story"],
+            )
+
+            package["event_resolution"] = self._safe(
+                "event_resolution",
+                self.event_resolution,
+                ["resolve", "analyze"],
+                {
+                    "events": events,
+                    "sources": sources,
+                    "story": package["story"],
+                },
+            )
+
+            package["claim_analysis"] = self._safe(
+                "claim_engine",
+                self.claim_engine,
+                ["analyze", "extract"],
+                {
+                    "story": package["story"],
+                    "sources": sources,
+                    "topic": topic,
+                    "research": package["source_intelligence"],
+                },
+            )
+
+            package["claims"] = self._extract_claims(
+                package["claim_analysis"]
+            )
+
+            package["evidence"] = self._safe(
+                "evidence_engine",
+                self.evidence,
+                ["analyze", "evaluate"],
+                {
+                    "claims": package["claims"],
+                    "sources": sources,
+                    "story": package["story"],
+                },
+            )
+
+            package["source_graph"] = self._safe(
+                "source_graph",
+                self.source_graph,
+                ["build_graph", "analyze"],
+                {
+                    "sources": sources,
+                    "claims": package["claims"],
+                    "entities": self._extract_entities(
+                        package["story"]
+                    ),
+                },
+            )
+
+            package["corroboration"] = self._safe(
+                "corroboration",
+                self.corroboration,
+                ["analyze", "corroborate"],
+                {
+                    "sources": sources,
+                    "claims": package["claims"],
+                    "evidence": package["evidence"],
+                },
+            )
+
+            package["verification"] = self._safe(
+                "fact_checker",
+                self.fact_checker,
+                ["verify_story", "verify", "analyze"],
+                {
+                    "story": package["story"],
+                    "sources": sources,
+                    "claims": package["claims"],
+                    "evidence": package["evidence"],
+                },
+            )
+
+            package["investigation"] = self._safe(
+                "investigation",
+                self.investigation,
+                ["investigate", "analyze"],
+                {
+                    "story": package["story"],
+                    "research": package["source_intelligence"],
+                    "claims": package["claims"],
+                    "sources": sources,
+                },
+            )
+
+            package["misinformation"] = self._safe(
+                "misinformation",
+                self.misinformation,
+                ["analyze", "assess"],
+                {
+                    "claims": package["claims"],
+                    "sources": sources,
+                    "story": package["story"],
+                },
+            )
+
+            package["significance"] = self._safe(
+                "significance",
+                self.significance,
+                ["evaluate", "analyze", "assess"],
+                {
+                    "story": package["story"],
+                    "sources": sources,
+                    "claims": package["claims"],
+                    "evidence": package["evidence"],
+                },
+            )
+
+            package["angles"] = self._safe(
+                "angle_finder",
+                self.angle_finder,
+                ["analyze", "find", "find_angles", "evaluate"],
+                {
+                    "story": package["story"],
+                    "related_stories": self._related_stories(
+                        package["cluster"]
+                    ),
+                    "evidence": package["evidence"],
+                    "trend_data": package["significance"],
+                    "article_plan": package["article_plan"],
+                    "cluster": package["cluster"],
+                },
+            )
+
+            package["synthesis"] = self._safe(
+                "story_synthesis",
+                self.story_synthesis,
+                ["synthesize", "analyze"],
+                {
+                    "sources": sources,
+                    "evidence": package["evidence"],
+                    "metadata": {
+                        "topic": topic,
+                        "story": package["story"],
+                        "claims": package["claims"],
+                        "verification": package["verification"],
+                        "corroboration": package["corroboration"],
+                        "source_graph": package["source_graph"],
+                        "source_intelligence": package[
+                            "source_intelligence"
+                        ],
+                        "investigation": package["investigation"],
+                        "misinformation": package["misinformation"],
+                        "significance": package["significance"],
+                        "angles": package["angles"],
+                    },
+                },
+            )
+
+            package["story_model"] = self._safe_dict(
+                package["synthesis"]
+            )
+
+            package["article_plan"] = (
+                self._build_provisional_article_plan(package)
+            )
+
+            package["reader_psychology"] = self._safe(
+                "reader_psychology",
+                self.reader_psychology,
+                ["analyze", "evaluate", "assess"],
+                {
+                    "article_plan": package["article_plan"],
+                    "story": package["story"],
+                    "significance": package["significance"],
+                    "angles": package["angles"],
+                    "claims": package["claims"],
+                    "evidence": package["evidence"],
+                },
+            )
+
+            package["psychology"] = self._safe(
+                "psychology",
+                self.psychology,
+                ["analyze", "evaluate", "assess"],
+                {
+                    "article_plan": package["article_plan"],
+                    "story": package["story"],
+                    "significance": package["significance"],
+                    "angles": package["angles"],
+                    "reader_psychology": package["reader_psychology"],
+                    "claims": package["claims"],
+                    "evidence": package["evidence"],
+                },
+            )
+
+            package["engagement"] = self._safe(
+                "engagement",
+                self.engagement,
+                ["analyze", "evaluate", "optimize"],
+                {
+                    "article_plan": package["article_plan"],
+                    "story": package["story"],
+                    "significance": package["significance"],
+                    "angles": package["angles"],
+                    "psychology": package["psychology"],
+                    "reader_psychology": package[
+                        "reader_psychology"
+                    ],
+                    "claims": package["claims"],
+                },
+            )
+
+            package["narrative"] = self._safe(
+                "narrative",
+                self.narrative,
+                ["analyze", "build", "construct", "create"],
+                {
+                    "article_plan": package["article_plan"],
+                    "story": package["story"],
+                    "synthesis": package["synthesis"],
+                    "story_model": package["story_model"],
+                    "claims": package["claims"],
+                    "evidence": package["evidence"],
+                    "angles": package["angles"],
+                    "psychology": package["psychology"],
+                    "reader_psychology": package[
+                        "reader_psychology"
+                    ],
+                    "engagement": package["engagement"],
+                },
+            )
+
+            final_plan = self._safe(
+                "journalist",
+                self.journalist,
+                [
+                    "write",
+                    "create",
+                    "generate",
+                    "produce",
+                    "compose",
+                    "analyze",
+                ],
+                {
+                    "article_plan": package["article_plan"],
+                    "story": package["story"],
+                    "sources": sources,
+                    "claims": package["claims"],
+                    "evidence": package["evidence"],
+                    "verification": package["verification"],
+                    "synthesis": package["synthesis"],
+                    "story_model": package["story_model"],
+                    "narrative": package["narrative"],
+                    "angles": package["angles"],
+                    "psychology": package["psychology"],
+   
