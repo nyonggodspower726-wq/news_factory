@@ -54,10 +54,18 @@ class ImageGenerator:
                 return {"status":"FAILED","generated":False,"source_type":"AI_GENERATED","prompt":prompt,"error":"Image API returned no usable image."}
             path=self._save(image,article,output_format)
             return {
-                "status":"IMAGE_READY","generated":True,"source_type":"AI_GENERATED",
-                "image_url":self._public_url(path),"local_path":str(path),"prompt":prompt,
-                "story_type":story_type,"platform":platform,"width":width,"height":height,
-                "alt_text":self.create_alt_text(article),"caption":self.create_caption(article),
+                "status":"IMAGE_READY",
+                "generated":True,
+                "source_type":"AI_GENERATED",
+                "image_url":self._public_url(path),
+                "local_path":str(path),
+                "prompt":prompt,
+                "story_type":story_type,
+                "platform":platform,
+                "width":width,
+                "height":height,
+                "alt_text":self.create_alt_text(article),
+                "caption":self.create_caption(article),
                 "credit":"AI-generated editorial illustration"
             }
         except requests.RequestException as exc:
@@ -74,26 +82,37 @@ class ImageGenerator:
         location=self._text(article.get("location",""))
         event=self._text(article.get("event_type",article.get("story_type","general")))
         style=self.styles.get(self.story_type(article),self.styles["general"])
+
         context_part=f"Story context for visual interpretation only: {summary}. " if summary else ""
         location_part=f"Location: {location}. " if location else ""
+
         prompt=(
             f"{style}. "
-            "Create an original, realistic editorial image that visually represents the verified news story. "
+            "Create a premium, original, realistic editorial news photograph that visually represents the verified news story. "
             f"Visual subject: {title}. "
             f"Topic: {topic}. "
             f"Event type: {event}. "
-            f"{context_part}{location_part}"
-            "Use visual storytelling only. The headline and story details are provided only to understand the subject; "
-            "they must NOT appear as text in the image. "
-            "IMPORTANT: absolutely no readable text anywhere in the image. "
-            "Do not generate words, letters, numbers, headlines, captions, subtitles, newspaper pages, magazine pages, "
-            "documents, articles, website interfaces, computer screens containing text, signs, posters, labels, logos, "
-            "watermarks, typography, charts with labels, or fake written material. "
-            "If a screen, sign, paper, book, newspaper, document, or display appears naturally in the scene, keep it blank, "
-            "abstract, blurred, or unreadable. "
-            "Do not fabricate evidence, documents, logos, or visual proof. "
-            "The final image must look like a clean premium newsroom photograph or editorial illustration with no typography."
+            f"{context_part}"
+            f"{location_part}"
+            "The headline, topic and story context are provided ONLY to help understand what should be shown visually. "
+            "Do not reproduce, display, spell, write, print, or render any of those words inside the image. "
+            "Use visual storytelling only. "
+            "The composition should look like professional journalism produced for a high-end international newsroom. "
+            "Use realistic people, environments, objects, lighting, depth, natural expressions and believable details appropriate to the story. "
+            "Avoid generic stock-photo appearance and avoid an obvious artificial or cartoon-like look. "
+            "IMPORTANT: absolutely NO readable text anywhere in the image. "
+            "NO words, letters, numbers, headlines, captions, subtitles, paragraphs, typography, newspaper text, magazine text, "
+            "documents, reports, books with writing, papers with writing, computer screens with writing, phone screens with writing, "
+            "television text, signs, posters, banners, labels, logos, brand names, watermarks, interface text, charts with labels, "
+            "graphs with labels, maps with labels, or any other written language. "
+            "Do not create newspapers, articles, documents, press releases, websites, social media posts, or written evidence. "
+            "If a computer, phone, television, billboard, sign, paper, book, screen, document, or display naturally appears in the scene, "
+            "it must be blank, abstract, blurred, out of focus, or completely unreadable. "
+            "Do not fabricate evidence, official documents, logos, screenshots, quotes, or visual proof. "
+            "Do not depict fictional written claims as real evidence. "
+            "The final image must contain visual information only and must be completely free of typography."
         )
+
         return self._clean(prompt)
 
     def story_type(self,article: Dict[str,Any])->str:
@@ -108,9 +127,11 @@ class ImageGenerator:
             "breaking_news":["breaking","explosion","earthquake","flood","fire","crash","attack"]
         }
         scores={category:sum(1 for word in words if word in text) for category,words in mapping.items()}
-        if not scores:return "general"
+        if not scores:
+            return "general"
         best_score=max(scores.values())
-        if best_score==0:return "general"
+        if best_score==0:
+            return "general"
         return max(scores,key=scores.get)
 
     def create_alt_text(self,article: Dict[str,Any])->str:
@@ -122,31 +143,55 @@ class ImageGenerator:
         return f"Editorial image illustrating: {title}" if title else "Editorial news image."
 
     def generate_prompt_only(self,article: Dict[str,Any])->Dict[str,Any]:
-        return {"status":"PROMPT_READY","prompt":self.build_prompt(article),"story_type":self.story_type(article),"alt_text":self.create_alt_text(article),"caption":self.create_caption(article)}
+        return {
+            "status":"PROMPT_READY",
+            "prompt":self.build_prompt(article),
+            "story_type":self.story_type(article),
+            "alt_text":self.create_alt_text(article),
+            "caption":self.create_caption(article)
+        }
 
     def _payload(self,prompt: str,width: int,height: int,output_format: str)->Dict[str,Any]:
-        payload={"prompt":prompt,"width":width,"height":height,"format":output_format}
-        if self.model:payload["model"]=self.model
+        payload={
+            "prompt":prompt,
+            "width":width,
+            "height":height,
+            "format":output_format
+        }
+        if self.model:
+            payload["model"]=self.model
         return payload
 
     def _headers(self)->Dict[str,str]:
-        return {"Authorization":f"Bearer {self.api_key}","Content-Type":"application/json","Accept":"image/*, application/json","User-Agent":"AI-News-Factory/1.3"}
+        return {
+            "Authorization":f"Bearer {self.api_key}",
+            "Content-Type":"application/json",
+            "Accept":"image/*, application/json",
+            "User-Agent":"AI-News-Factory/1.3"
+        }
 
     def _looks_like_image(self,content: bytes)->bool:
-        if not content:return False
-        if content[:3]==b"\xff\xd8\xff":return True
-        if content[:8]==b"\x89PNG\r\n\x1a\n":return True
-        if content[:6] in (b"GIF87a",b"GIF89a"):return True
+        if not content:
+            return False
+        if content[:3]==b"\xff\xd8\xff":
+            return True
+        if content[:8]==b"\x89PNG\r\n\x1a\n":
+            return True
+        if content[:6] in (b"GIF87a",b"GIF89a"):
+            return True
         return len(content)>=12 and content[:4]==b"RIFF" and content[8:12]==b"WEBP"
 
     def _extract_image(self,data: Any)->Optional[str]:
-        if not isinstance(data,dict):return None
+        if not isinstance(data,dict):
+            return None
         for key in ("image_url","url","image","b64_json","data"):
             value=data.get(key)
             if key=="data" and isinstance(value,list) and value:
                 item=value[0]
-                if isinstance(item,dict):value=item.get("url",item.get("b64_json"))
-            if value and isinstance(value,str):return value
+                if isinstance(item,dict):
+                    value=item.get("url",item.get("b64_json"))
+            if value and isinstance(value,str):
+                return value
         return None
 
     def _save(self,image: Any,article: Dict[str,Any],output_format: str)->Path:
@@ -155,26 +200,37 @@ class ImageGenerator:
         slug=re.sub(r"[^a-z0-9]+","-",title).strip("-")[:70] or "news"
         ext=self._detect_extension(image,output_format)
         path=self.output_dir/f"{slug}_{abs(hash(title))%100000}.{ext}"
+
         if isinstance(image,(bytes,bytearray)):
             path.write_bytes(bytes(image))
         elif isinstance(image,str) and image.startswith(("http://","https://")):
-            response=requests.get(image,timeout=self.timeout,headers={"User-Agent":"AI-News-Factory/1.3"})
+            response=requests.get(
+                image,
+                timeout=self.timeout,
+                headers={"User-Agent":"AI-News-Factory/1.3"}
+            )
             response.raise_for_status()
             path.write_bytes(response.content)
         elif isinstance(image,str):
-            if image.startswith("data:image"):image=image.split(",",1)[1]
+            if image.startswith("data:image"):
+                image=image.split(",",1)[1]
             path.write_bytes(base64.b64decode(image))
         else:
             raise ValueError("Unsupported image response.")
+
         return path
 
     def _detect_extension(self,image: Any,requested_format: str)->str:
         if isinstance(image,(bytes,bytearray)):
             data=bytes(image)
-            if data[:3]==b"\xff\xd8\xff":return "jpg"
-            if data[:8]==b"\x89PNG\r\n\x1a\n":return "png"
-            if data[:6] in (b"GIF87a",b"GIF89a"):return "gif"
-            if len(data)>=12 and data[:4]==b"RIFF" and data[8:12]==b"WEBP":return "webp"
+            if data[:3]==b"\xff\xd8\xff":
+                return "jpg"
+            if data[:8]==b"\x89PNG\r\n\x1a\n":
+                return "png"
+            if data[:6] in (b"GIF87a",b"GIF89a"):
+                return "gif"
+            if len(data)>=12 and data[:4]==b"RIFF" and data[8:12]==b"WEBP":
+                return "webp"
         return "jpg" if (requested_format or "png").lower() in {"jpg","jpeg"} else "png"
 
     def _public_url(self,path: Path)->str:
@@ -185,9 +241,12 @@ class ImageGenerator:
         return isinstance(result,dict) and result.get("status")=="IMAGE_READY" and bool(result.get("image_url"))
 
     def _text(self,value: Any)->str:
-        if value is None:return ""
-        if isinstance(value,dict):return " ".join(str(v) for v in value.values() if v)
-        if isinstance(value,list):return " ".join(str(v) for v in value if v)
+        if value is None:
+            return ""
+        if isinstance(value,dict):
+            return " ".join(str(v) for v in value.values() if v)
+        if isinstance(value,list):
+            return " ".join(str(v) for v in value if v)
         return str(value).strip()
 
     def _clean(self,text: str)->str:
@@ -197,7 +256,13 @@ class ImageGenerator:
         token=os.getenv("CLOUDFLARE_API_TOKEN","").strip()
         key=os.getenv("IMAGE_API_KEY","").strip()
         source="CLOUDFLARE_API_TOKEN" if token else ("IMAGE_API_KEY" if key else "NONE")
-        return {"engine":self.name,"version":self.version,"status":"READY" if self.api_url and self.api_key else "NOT_CONFIGURED","configured":bool(self.api_url and self.api_key),"credential_source":source}
+        return {
+            "engine":self.name,
+            "version":self.version,
+            "status":"READY" if self.api_url and self.api_key else "NOT_CONFIGURED",
+            "configured":bool(self.api_url and self.api_key),
+            "credential_source":source
+        }
 
 image_generator=ImageGenerator()
 
@@ -208,6 +273,10 @@ def build_image_prompt(article):
     return image_generator.generate_prompt_only(article)
 
 if __name__=="__main__":
-    test={"title":"Officials announce a new development","topic":"breaking news","excerpt":"Officials announced a new development today.","location":"Lagos"}
+    test={
+        "title":"Officials announce a new development",
+        "topic":"breaking news",
+        "excerpt":"Officials announced a new development today.",
+        "location":"Lagos"
+    }
     print(build_image_prompt(test))
-        
