@@ -12,7 +12,7 @@ class EditorEngine:
 
     def __init__(self):
         self.name="AI Senior Editor"
-        self.version="2.1.0"
+        self.version="2.1.1"
         self.minimum_approval_score=80
         self.maximum_blocking_errors=0
 
@@ -134,7 +134,19 @@ class EditorEngine:
         }:
             return self._warning(
                 "verification",
-                "Some claims require additional review."
+                "Verification contains non-blocking review warnings."
+            )
+
+        if status in {
+            "BLOCK_PUBLICATION",
+            "BLOCKED",
+            "FAILED",
+            "CONTRADICTED",
+            "HIGH_RISK"
+        }:
+            return self._error(
+                "verification",
+                "Verification reports a blocking safety condition."
             )
 
         if status=="UNKNOWN" and not verification:
@@ -245,14 +257,17 @@ class EditorEngine:
                 isinstance(x,dict)
                 and str(
                     x.get("status","")
-                ).upper()=="CONTRADICTED"
+                ).upper() in {
+                    "CONTRADICTED",
+                    "BLOCKED"
+                }
             )
         ]
 
         if contradicted:
             return self._error(
                 "claims",
-                "Contradicted claims are present."
+                "Contradicted or blocked claims are present."
             )
 
         excluded=plan.get(
@@ -470,7 +485,6 @@ class EditorEngine:
     ):
 
         plan=self._dict(article_plan)
-        article=self._dict(article)
 
         safe_claims=plan.get(
             "safe_claims",
@@ -542,7 +556,8 @@ class EditorEngine:
             status in {
                 "BLOCKED",
                 "FAILED",
-                "HIGH_RISK"
+                "HIGH_RISK",
+                "CRITICAL"
             }
             or risk in {
                 "HIGH",
@@ -558,7 +573,8 @@ class EditorEngine:
         if (
             status in {
                 "WARNING",
-                "REVIEW_REQUIRED"
+                "REVIEW_REQUIRED",
+                "HUMAN_REVIEW_REQUIRED"
             }
             or risk=="MEDIUM"
         ):
@@ -840,4 +856,4 @@ if __name__=="__main__":
             EditorEngine().status(),
             indent=2
         )
-    )
+        )
