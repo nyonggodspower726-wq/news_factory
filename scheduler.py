@@ -8,7 +8,7 @@ from collectors.source_manager import source_manager
 
 logger=logging.getLogger("NewsFactory.Scheduler")
 NIGERIA_TZ=ZoneInfo("Africa/Lagos")
-RUN_TIME="20:37:00"
+RUN_TIME="21:48:00"
 NEWS_LIMIT=30
 NEWS_TOPIC=""
 RUN_IF_TIME_MISSED=False
