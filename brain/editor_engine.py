@@ -12,7 +12,7 @@ class EditorEngine:
 
     def __init__(self):
         self.name="AI Senior Editor"
-        self.version="2.1.1"
+        self.version="2.1.2"
         self.minimum_approval_score=80
         self.maximum_blocking_errors=0
 
@@ -70,6 +70,18 @@ class EditorEngine:
         warnings=self._collect_warnings(checks)
         score=self._calculate_score(checks,errors)
         decision=self._decision(score,errors,warnings)
+
+        print(
+            f"EDITOR RESULT | score={score} | decision={decision} | "
+            f"errors={len(errors)} | warnings={len(warnings)}"
+        )
+
+        for check in checks:
+            if check.get("status")!="PASS":
+                print(
+                    f"EDITOR CHECK | {check.get('check')} | "
+                    f"{check.get('status')} | {check.get('message')}"
+                )
 
         return {
             "engine":self.name,
@@ -644,7 +656,7 @@ class EditorEngine:
             )
 
             if status=="WARNING":
-                score-=5
+                score-=3
 
             elif status=="ERROR":
                 score-=25
@@ -669,7 +681,7 @@ class EditorEngine:
         if errors:
             return "BLOCKED"
 
-        if score<self.minimum_approval_score:
+        if warnings and score<70:
             return "NEEDS_REVISION"
 
         if warnings:
@@ -856,4 +868,4 @@ if __name__=="__main__":
             EditorEngine().status(),
             indent=2
         )
-        )
+    )
