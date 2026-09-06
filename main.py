@@ -1,8 +1,8 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
-from config import FACTORY_NAME, VERSION
+from typing import Any,Dict,List
+from config import FACTORY_NAME,VERSION
 from brain.pipeline import BrainPipeline
 from factory_pipeline import FactoryPipeline
 logging.basicConfig(level=logging.INFO,format="%(asctime)s | %(levelname)s | %(message)s")
@@ -12,8 +12,8 @@ class NewsFactory:
         self.name=FACTORY_NAME
         self.version=VERSION
         self.running=False
-        self.brain=BrainPipeline()
         self.factory_pipeline=FactoryPipeline()
+        self.brain=BrainPipeline(factory_pipeline=self.factory_pipeline)
     async def start(self):
         self.running=True
         logger.info("="*70)
@@ -45,7 +45,7 @@ class NewsFactory:
         logger.info("Topic: %s",topic or "General News")
         logger.info("Starting intelligence pipeline...")
         try:
-            brain_result=await asyncio.to_thread(self.brain.run,sources,story,topic)
+            brain_result=await asyncio.to_thread(self.brain.run,sources,story,topic,"website",False)
         except Exception as exc:
             logger.exception("Brain pipeline failed: %s",exc)
             return {"pipeline_status":"BRAIN_FAILED","publication_ready":False,"published":False,"error":str(exc)}
@@ -54,14 +54,8 @@ class NewsFactory:
             return {"pipeline_status":"BRAIN_INVALID_RESULT","publication_ready":False,"published":False,"error":"Brain pipeline returned a non-dictionary result."}
         logger.info("Brain pipeline completed.")
         logger.info("Pipeline status: %s",brain_result.get("pipeline_status","UNKNOWN"))
-        publication_ready=bool(brain_result.get("publication_ready",False))
-        logger.info("Editorial publication gate: %s","PASSED" if publication_ready else "NOT PASSED")
-        if not publication_ready:
-            logger.warning("Story was NOT approved for publication.")
-            logger.warning("Publication pipeline will not publish this story.")
-            return {**brain_result,"publication_status":"NOT_READY","published":False}
-        logger.info("Story passed the central editorial publication gate.")
-        logger.info("Sending approved story to FactoryPipeline...")
+        logger.info("Brain processing complete. Passing full processed package to publication engine...")
+        logger.info("Brain editorial assessment: %s",brain_result.get("publication_ready","UNKNOWN"))
         try:
             publication_result=await asyncio.to_thread(self.factory_pipeline.publish,brain_result,"website",False)
         except Exception as exc:
