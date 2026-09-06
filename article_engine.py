@@ -10,7 +10,7 @@ class ArticleEngine:
 
     def __init__(self) -> None:
         self.name = "News Article Production Engine"
-        self.version = "1.0.0"
+        self.version = "1.0.1"
         self.max_facts = 12
         self.max_sections = 8
 
@@ -81,12 +81,7 @@ class ArticleEngine:
             "publication_safe": article.get("publication_safe", False),
         }
 
-    def _title(
-        self,
-        story: Dict[str, Any],
-        headline: Dict[str, Any],
-        synthesis: Dict[str, Any],
-    ) -> str:
+    def _title(self, story: Dict[str, Any], headline: Dict[str, Any], synthesis: Dict[str, Any]) -> str:
         """Select and normalize the most appropriate article title."""
         for value in (
             headline.get("recommended_headline"),
@@ -98,20 +93,13 @@ class ArticleEngine:
             value = self._text(value)
             if value:
                 return self._clean_title(value)
-
         return "Latest News Development"
 
-    def _facts(
-        self,
-        package: Dict[str, Any],
-        synthesis: Dict[str, Any],
-        verification: Dict[str, Any],
-    ) -> List[str]:
+    def _facts(self, package: Dict[str, Any], synthesis: Dict[str, Any], verification: Dict[str, Any]) -> List[str]:
         """Collect unique, publishable facts from the available inputs."""
         raw = []
         raw.extend(synthesis.get("confirmed_facts", []) if isinstance(synthesis, dict) else [])
         raw.extend(package.get("fact_candidates", []) if isinstance(package, dict) else [])
-
         if isinstance(verification, dict):
             raw.extend(verification.get("claims", []))
 
@@ -121,10 +109,9 @@ class ArticleEngine:
         for item in raw:
             text = ""
             status = ""
-
             if isinstance(item, dict):
                 text = self._text(item.get("text", item.get("claim", "")))
-                status = self._text(item.get("status", item.get("publication_status", "")))
+                status = self._text(item.get("status", item.get("publication_status", ""))).upper()
             else:
                 text = self._text(item)
 
@@ -134,7 +121,6 @@ class ArticleEngine:
             key = text.lower()
             if key in seen:
                 continue
-
             if status in {"CONTRADICTED", "DISPUTED", "UNVERIFIED", "HOLD_FOR_REVIEW"}:
                 continue
 
@@ -146,21 +132,13 @@ class ArticleEngine:
 
         return facts
 
-    def _lead(
-        self,
-        title: str,
-        facts: List[str],
-        story: Dict[str, Any],
-        synthesis: Dict[str, Any],
-    ) -> str:
+    def _lead(self, title: str, facts: List[str], story: Dict[str, Any], synthesis: Dict[str, Any]) -> str:
         """Select the strongest available lead for the article."""
         if facts:
             return facts[0]
-
         central_event = self._text(synthesis.get("central_event", ""))
         if central_event:
             return central_event
-
         summary = self._text(story.get("summary", story.get("description", "")))
         return summary or title
 
@@ -180,11 +158,7 @@ class ArticleEngine:
 
         return self._unique_text(context)[:6]
 
-    def _consequences(
-        self,
-        synthesis: Dict[str, Any],
-        significance: Dict[str, Any],
-    ) -> List[str]:
+    def _consequences(self, synthesis: Dict[str, Any], significance: Dict[str, Any]) -> List[str]:
         """Compile the potential implications and significance of the story."""
         values = synthesis.get("consequences", []) if isinstance(synthesis, dict) else []
         if isinstance(values, str):
@@ -235,13 +209,7 @@ class ArticleEngine:
 
         return self._unique_text(values)[:6]
 
-    def _sections(
-        self,
-        facts: List[str],
-        context: List[str],
-        consequences: List[str],
-        next_steps: List[str],
-    ) -> List[Dict[str, Any]]:
+    def _sections(self, facts: List[str], context: List[str], consequences: List[str], next_steps: List[str]) -> List[Dict[str, Any]]:
         """Build the article's ordered content sections."""
         sections = []
 
@@ -254,7 +222,7 @@ class ArticleEngine:
         if next_steps:
             sections.append({"heading": "What happens next", "content": next_steps})
 
-        return sections[: self.max_sections]
+        return sections[:self.max_sections]
 
     def _body(self, sections: List[Dict[str, Any]]) -> str:
         """Render article sections as Markdown."""
@@ -281,23 +249,11 @@ class ArticleEngine:
         text = self._clean_text(text)
         return text[:240].rsplit(" ", 1)[0] if len(text) > 240 else text
 
-    def _category(
-        self,
-        story: Dict[str, Any],
-        synthesis: Dict[str, Any],
-        topic: str,
-    ) -> str:
+    def _category(self, story: Dict[str, Any], synthesis: Dict[str, Any], topic: str) -> str:
         """Determine and normalize the article category."""
-        value = self._text(
-            story.get(
-                "category",
-                story.get("story_type", synthesis.get("story_type", "general")),
-            )
-        )
-
+        value = self._text(story.get("category", story.get("story_type", synthesis.get("story_type", "general"))))
         if value:
             return value.lower().replace(" ", "-")
-
         return "general"
 
     def _tags(self, package: Dict[str, Any], topic: str) -> List[str]:
@@ -305,9 +261,7 @@ class ArticleEngine:
         values = []
 
         if topic:
-            values.extend(
-                re.findall(r"\b[a-zA-Z][a-zA-Z0-9'-]{2,}\b", topic.lower())
-            )
+            values.extend(re.findall(r"\b[a-zA-Z][a-zA-Z0-9'-]{2,}\b", topic.lower()))
 
         story = package.get("story", {}) if isinstance(package, dict) else {}
         entities = story.get("entities", {}) if isinstance(story, dict) else {}
@@ -336,12 +290,10 @@ class ArticleEngine:
             if not url:
                 continue
 
-            output.append(
-                {
-                    "name": self._text(source.get("name", source.get("publisher", ""))),
-                    "url": url,
-                }
-            )
+            output.append({
+                "name": self._text(source.get("name", source.get("publisher", ""))),
+                "url": url,
+            })
 
         return output
 
@@ -349,28 +301,47 @@ class ArticleEngine:
         """Evaluate verification and editorial controls before publication."""
         verification = package.get("verification", {}) if isinstance(package, dict) else {}
         editorial = package.get("editorial", {}) if isinstance(package, dict) else {}
-        editorial_gate = (
-            editorial.get("publication_gate") if isinstance(editorial, dict) else None
-        )
-        status = (
-            self._text(verification.get("publication_status", ""))
-            if isinstance(verification, dict)
-            else ""
-        )
+
+        if not isinstance(verification, dict):
+            verification = {}
+        if not isinstance(editorial, dict):
+            editorial = {}
+
+        editorial_gate = editorial.get("publication_gate")
+        decision = self._text(editorial.get("decision", "")).upper()
+        errors = editorial.get("errors", [])
         publication_ready = package.get("publication_ready")
 
+        status = self._text(
+            verification.get(
+                "publication_status",
+                verification.get("status", "")
+            )
+        ).upper()
+
+        approved_decisions = {"APPROVED", "APPROVED_WITH_WARNINGS"}
+        hard_verification_blocks = {
+            "BLOCK_PUBLICATION",
+            "BLOCKED",
+            "FAILED",
+            "CONTRADICTED",
+            "HIGH_RISK",
+            "CRITICAL",
+        }
+
+        has_editorial_errors = bool(errors)
+        editorial_approved = decision in approved_decisions and not has_editorial_errors
+
         logger.info(
-            "PUBLICATION GATE CHECK | verification=%s | editorial_gate=%s | publication_ready=%s",
+            "PUBLICATION GATE CHECK | verification=%s | editorial_gate=%s | decision=%s | errors=%s | publication_ready=%s",
             status,
             editorial_gate,
+            decision,
+            len(errors) if isinstance(errors, list) else bool(errors),
             publication_ready,
         )
 
-        if isinstance(editorial, dict) and editorial_gate is False:
-            logger.warning("PUBLICATION BLOCKED | reason=EDITORIAL_GATE_FALSE")
-            return False
-
-        if status in {"BLOCK_PUBLICATION", "HUMAN_REVIEW_REQUIRED"}:
+        if status in hard_verification_blocks:
             logger.warning("PUBLICATION BLOCKED | reason=VERIFICATION_%s", status)
             return False
 
@@ -378,7 +349,41 @@ class ArticleEngine:
             logger.warning("PUBLICATION BLOCKED | reason=PUBLICATION_READY_FALSE")
             return False
 
-        logger.info("PUBLICATION GATE PASSED")
+        if status == "HUMAN_REVIEW_REQUIRED":
+            if not editorial_approved:
+                logger.warning(
+                    "PUBLICATION BLOCKED | reason=HUMAN_REVIEW_REQUIRED_WITHOUT_EDITOR_APPROVAL"
+                )
+                return False
+            logger.info(
+                "PUBLICATION REVIEW ACCEPTED | editor_decision=%s",
+                decision,
+            )
+
+        if editorial_gate is False and not editorial_approved:
+            logger.warning(
+                "PUBLICATION BLOCKED | reason=EDITORIAL_GATE_FALSE"
+            )
+            return False
+
+        if has_editorial_errors:
+            logger.warning(
+                "PUBLICATION BLOCKED | reason=EDITORIAL_ERRORS"
+            )
+            return False
+
+        if decision and decision not in approved_decisions:
+            logger.warning(
+                "PUBLICATION BLOCKED | reason=EDITORIAL_DECISION_%s",
+                decision,
+            )
+            return False
+
+        logger.info(
+            "PUBLICATION GATE PASSED | verification=%s | decision=%s",
+            status,
+            decision,
+        )
         return True
 
     def _slug(self, title: str) -> str:
@@ -432,7 +437,11 @@ class ArticleEngine:
 
     def status(self) -> Dict[str, str]:
         """Return the current engine status."""
-        return {"engine": self.name, "version": self.version, "status": "READY"}
+        return {
+            "engine": self.name,
+            "version": self.version,
+            "status": "READY",
+        }
 
 
 article_engine = ArticleEngine()
