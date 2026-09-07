@@ -179,3 +179,76 @@ The content field must contain the complete article in Markdown. Do not put the 
             if fact and fact not in paragraphs:paragraphs.append(fact)
         content="\n\n".join(paragraphs)
         return {"status":"JOURNALISM_FALLBACK","engine":self.name,"version":self.version,"article":{"title":title,"headline":title,"dek":summary[:180],"lead":summary or (facts[0] if facts else title),"content":content,"body":content,"slug":self._slug(title),"key_facts":facts,"context":[],"why_it_matters":[],"what_happens_next":[],"what_is_unknown":[],"sources":research["sources"],"seo_title":title[:70],"seo_description":(summary or title)[:160],"word_count":self._word_count(content),"long_form":False,"publication_safe":bool(content)},"content":content,"body":content,"title":title,"headline":title,"word_count":self._word_count(content),"research_grounded":True,"publication_safe":bool(content)}
+    def validate_article_plan(self,article_plan:Dict[str,Any])->Dict[str,Any]:
+        article=article_plan.get("article",article_plan) if isinstance(article_plan,dict) else {}
+        missing=[key for key in self.required_sections if key not in article]
+        content=self._text(article.get("content",article.get("body","")))
+        words=self._word_count(content)
+        return {"valid":not missing and bool(content),"missing":missing,"word_count":words,"long_form":words>=self.minimum_words,"status":"VALID" if not missing and content else "INVALID"}
+
+    def summarize_plan(self,article_plan:Dict[str,Any])->Dict[str,Any]:
+        article=article_plan.get("article",article_plan) if isinstance(article_plan,dict) else {}
+        content=self._text(article.get("content",article.get("body","")))
+        return {"status":"SUMMARY_READY","word_count":self._word_count(content),"headline":self._text(article.get("headline",article.get("title",""))),"fact_count":len(self._listify(article.get("key_facts"))),"source_count":len(self._listify(article.get("sources")))}
+
+    def _verified_claims(self,v):
+        if not isinstance(v,dict):return []
+        result=[]
+        for key in ("verified_claims","confirmed_claims","claims"):
+            value=v.get(key)
+            if not isinstance(value,list):continue
+            for item in value:
+                if isinstance(item,str):result.append(item)
+                elif isinstance(item,dict):
+                    status=self._text(item.get("status",item.get("verification_status",""))).upper()
+                    if status in {"CONTRADICTED","DISPUTED","UNVERIFIED","HOLD_FOR_REVIEW","REJECTED"}:continue
+                    text=item.get("claim",item.get("text",item.get("content","")))
+                    if text:result.append(text)
+        return result
+
+    def _first_paragraph(self,text):
+        parts=[x.strip() for x in str(text or "").split("\n\n") if x.strip()]
+        for part in parts:
+            if not part.startswith("#"):return re.sub(r"^#+\s*","",part)
+        return ""
+
+    def _listify(self,value):
+        if value is None:return []
+        if isinstance(value,list):return [x for x in value if x not in (None,"")]
+        return [value] if str(value).strip() else []
+
+    def _trim_list(self,value,limit):
+        return [self._trim(x) for x in value[:limit] if isinstance(x,(dict,list,str,int,float,bool))]
+
+    def _trim(self,value,depth=0):
+        if depth>4:return str(value)[:1000]
+        if isinstance(value,dict):return {str(k):self._trim(v,depth+1) for k,v in list(value.items())[:80]}
+        if isinstance(value,list):return [self._trim(v,depth+1) for v in value[:60]]
+        if isinstance(value,str):return value[:5000]
+        return value
+
+    def _text(self,value):
+        if value is None:return ""
+        if isinstance(value,(dict,list)):return json.dumps(value,ensure_ascii=False,default=str)
+        return str(value).strip()
+
+    def _clean_title(self,value):
+        value=self._text(value)
+        value=re.sub(r"\s+"," ",value).strip()
+        value=re.sub(r"^[#*\s]+|[#*\s]+$","",value)
+        return value[:180]
+
+    def _word_count(self,text):
+        return len(re.findall(r"\b[\w'-]+\b",str(text or "")))
+
+    def _slug(self,text):
+        value=self._text(text).lower()
+        value=re.sub(r"[^\w\s-]","",value)
+        value=re.sub(r"[-\s]+","-",value).strip("-")
+        return value[:100] or "latest-news-development"
+
+def create_article_plan(newsroom_package:Dict[str,Any])->Dict[str,Any]:
+    return JournalistEngine(ai=newsroom_package.get("ai") if isinstance(newsroom_package,dict) else None).create_article_plan(newsroom_package)
+
+def build_article(newsroom_package:Dict[str,Any])->Dict[str,Any]:
+    return JournalistEngine(ai=newsroom_package.get("ai") if isinstance(newsroom_package,dict) else None).build_article(newsroom_package)
