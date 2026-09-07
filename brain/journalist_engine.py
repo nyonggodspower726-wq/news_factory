@@ -1,978 +1,181 @@
-"""
-AI NEWS FACTORY
-JOURNALIST ENGINE
-
-Purpose
--------
-Convert verified newsroom intelligence into a structured
-news article.
-
-The Journalist Engine receives:
-
-    - verified claims
-    - source intelligence
-    - story significance
-    - editorial angle
-    - story cluster
-    - reader questions
-
-It produces a newsroom-ready article plan.
-
-IMPORTANT
----------
-This engine must not invent facts.
-
-Anything unsupported by the evidence should be marked as:
-    UNKNOWN
-    UNVERIFIED
-    DISPUTED
-
-The actual prose-generation model can consume this structured
-plan later.
-
-Editorial priorities:
-    1. Accuracy
-    2. Clarity
-    3. Relevance
-    4. Context
-    5. Reader engagement
-    6. Concision
-    7. Transparency
-"""
-
-from typing import Any, Dict, List
-
-
-# =========================================================
-# JOURNALIST ENGINE
-# =========================================================
+import json,re,logging,os
+from typing import Any,Dict,List
+logger=logging.getLogger("NewsFactory.JournalistEngine")
 
 class JournalistEngine:
-
-    def __init__(self):
-
-        self.name = "AI Journalist Engine"
-
-        self.version = "1.0.0"
-
-        self.required_sections = [
-            "headline",
-            "dek",
-            "lead",
-            "key_facts",
-            "context",
-            "why_it_matters",
-            "what_happens_next",
-            "what_is_unknown",
-            "sources"
-        ]
-
-    # =====================================================
-    # MAIN ARTICLE PLAN
-    # =====================================================
-
-    def create_article_plan(
-        self,
-        newsroom_package: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        newsroom_package = (
-            newsroom_package
-            if isinstance(
-                newsroom_package,
-                dict
-            )
-            else {}
-        )
-
-        story = newsroom_package.get(
-            "story",
-            {}
-        )
-
-        significance = newsroom_package.get(
-            "significance",
-            {}
-        )
-
-        angles = newsroom_package.get(
-            "angles",
-            {}
-        )
-
-        verification = newsroom_package.get(
-            "verification",
-            {}
-        )
-
-        cluster = newsroom_package.get(
-            "cluster",
-            {}
-        )
-
-        if not isinstance(story, dict):
-            story = {}
-
-        if not isinstance(significance, dict):
-            significance = {}
-
-        if not isinstance(angles, dict):
-            angles = {}
-
-        if not isinstance(verification, dict):
-            verification = {}
-
-        if not isinstance(cluster, dict):
-            cluster = {}
-
-        primary_angle = angles.get(
-            "primary_angle"
-        ) or {}
-
-        if not isinstance(
-            primary_angle,
-            dict
-        ):
-            primary_angle = {}
-
-        verified_claims = verification.get(
-            "claims",
-            []
-        )
-
-        if not isinstance(
-            verified_claims,
-            list
-        ):
-            verified_claims = []
-
-        safe_claims = self._safe_claims(
-            verified_claims
-        )
-
-        unsupported_claims = self._unsafe_claims(
-            verified_claims
-        )
-
-        article_structure = (
-            self._build_structure(
-                primary_angle,
-                story,
-                safe_claims,
-                unsupported_claims
-            )
-        )
-
-        editorial_notes = (
-            self._editorial_notes(
-                verification,
-                significance,
-                cluster
-            )
-        )
-
-        return {
-            "engine": self.name,
-
-            "version": self.version,
-
-            "status":
-                self._article_status(
-                    verification
-                ),
-
-            "article":
-                article_structure,
-
-            "editorial_notes":
-                editorial_notes,
-
-            "safe_claims":
-                safe_claims,
-
-            "excluded_claims":
-                unsupported_claims,
-
-            "writing_rules":
-                self._writing_rules()
-        }
-
-    # =====================================================
-    # SAFE CLAIMS
-    # =====================================================
-
-    def _safe_claims(
-        self,
-        claims: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        safe_statuses = {
-            "CONFIRMED",
-            "STRONGLY_SUPPORTED"
-        }
-
-        return [
-            claim
-            for claim in claims
-            if isinstance(
-                claim,
-                dict
-            )
-            and claim.get(
-                "status"
-            ) in safe_statuses
-        ]
-
-    # =====================================================
-    # UNSAFE CLAIMS
-    # =====================================================
-
-    def _unsafe_claims(
-        self,
-        claims: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-
-        safe_statuses = {
-            "CONFIRMED",
-            "STRONGLY_SUPPORTED"
-        }
-
-        return [
-            claim
-            for claim in claims
-            if isinstance(
-                claim,
-                dict
-            )
-            and claim.get(
-                "status"
-            ) not in safe_statuses
-        ]
-
-    # =====================================================
-    # ARTICLE STRUCTURE
-    # =====================================================
-
-    def _build_structure(
-        self,
-        angle: Dict[str, Any],
-        story: Dict[str, Any],
-        safe_claims: List[Dict[str, Any]],
-        unsafe_claims: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-
-        angle_type = angle.get(
-            "type",
-            "WHAT_HAPPENED"
-        )
-
-        original = story.get(
-            "original",
-            {}
-        )
-
-        if not isinstance(
-            original,
-            dict
-        ):
-            original = {}
-
-        title = original.get(
-            "title",
-            ""
-        )
-
-        source = original.get(
-            "source",
-            ""
-        )
-
-        return {
-
-            "headline": {
-
-                "purpose":
-                    "Accurately communicate the most important development.",
-
-                "must_include":
-                    self._headline_requirements(
-                        angle_type
-                    ),
-
-                "avoid": [
-                    "false urgency",
-                    "unsupported claims",
-                    "manufactured controversy",
-                    "clickbait that changes meaning",
-                    "all-caps sensationalism"
-                ]
-            },
-
-            "dek": {
-
-                "purpose":
-                    "Give the reader enough context to understand why the story matters."
-            },
-
-            "lead": {
-
-                "purpose":
-                    self._lead_instruction(
-                        angle_type
-                    ),
-
-                "required_information":
-                    self._lead_information(
-                        safe_claims
-                    )
-            },
-
-            "key_facts": {
-
-                "purpose":
-                    "Present the strongest verified facts first.",
-
-                "facts":
-                    [
-                        claim.get(
-                            "claim",
-                            claim.get(
-                                "text",
-                                ""
-                            )
-                        )
-                        for claim in safe_claims
-                    ]
-            },
-
-            "context": {
-
-                "purpose":
-                    "Explain the background needed to understand the event."
-            },
-
-            "why_it_matters": {
-
-                "purpose":
-                    "Connect the confirmed development to reader relevance."
-            },
-
-            "what_happens_next": {
-
-                "purpose":
-                    "Explain confirmed next steps without presenting predictions as facts."
-            },
-
-            "what_is_unknown": {
-
-                "purpose":
-                    "Explicitly identify unresolved or unverified information.",
-
-                "items":
-                    [
-                        claim.get(
-                            "claim",
-                            claim.get(
-                                "text",
-                                ""
-                            )
-                        )
-                        for claim in unsafe_claims
-                    ]
-            },
-
-            "sources": {
-
-                "primary_source":
-                    source,
-
-                "source_count":
-                    len(
-                        safe_claims
-                    )
-            },
-
-            "source_title":
-                title
-        }
-
-    # =====================================================
-    # HEADLINE REQUIREMENTS
-    # =====================================================
-
-    def _headline_requirements(
-        self,
-        angle_type: str
-    ) -> List[str]:
-
-        requirements = {
-
-            "WHAT_HAPPENED": [
-
-                "state the main event",
-
-                "identify the relevant actor",
-
-                "avoid unnecessary adjectives"
-            ],
-
-            "WHY_IT_MATTERS": [
-
-                "state the important development",
-
-                "signal its significance",
-
-                "avoid exaggeration"
-            ],
-
-            "WHAT_IT_MEANS_FOR_PEOPLE": [
-
-                "identify the affected audience",
-
-                "make the practical consequence clear"
-            ],
-
-            "WHAT_CHANGES_NOW": [
-
-                "identify the immediate change",
-
-                "explain who or what is affected",
-
-                "avoid unsupported predictions"
-            ],
-
-            "WHAT_HAPPENS_NEXT": [
-
-                "identify the confirmed next step",
-
-                "avoid presenting speculation as fact"
-            ]
-        }
-
-        return requirements.get(
-            angle_type,
-            requirements[
-                "WHAT_HAPPENED"
-            ]
-        )
-
-    # =====================================================
-    # LEAD INSTRUCTION
-    # =====================================================
-
-    def _lead_instruction(
-        self,
-        angle_type: str
-    ) -> str:
-
-        instructions = {
-
-            "WHAT_HAPPENED":
-                "Open with the most important confirmed development.",
-
-            "WHY_IT_MATTERS":
-                "Open with the confirmed development and immediately establish why it matters.",
-
-            "WHAT_IT_MEANS_FOR_PEOPLE":
-                "Open with the confirmed development and its practical relevance to affected people.",
-
-            "WHAT_CHANGES_NOW":
-                "Open with what has changed and identify the confirmed immediate effect.",
-
-            "WHAT_HAPPENS_NEXT":
-                "Open with the confirmed development and explain the next verified step."
-        }
-
-        return instructions.get(
-            angle_type,
-            instructions[
-                "WHAT_HAPPENED"
-            ]
-        )
-
-    # =====================================================
-    # LEAD INFORMATION
-    # =====================================================
-
-    def _lead_information(
-        self,
-        claims: List[Dict[str, Any]]
-    ) -> List[str]:
-
-        information = []
-
-        for claim in claims[:5]:
-
-            if not isinstance(
-                claim,
-                dict
-            ):
+    def __init__(self,ai=None)->None:
+        self.name="AI Journalist Engine"
+        self.version="3.0.0"
+        self.ai=ai
+        self.target_words=int(os.getenv("NEWS_TARGET_WORDS","1600"))
+        self.minimum_words=int(os.getenv("NEWS_MINIMUM_WORDS","900"))
+        self.maximum_words=int(os.getenv("NEWS_MAXIMUM_WORDS","2400"))
+        self.temperature=float(os.getenv("NEWS_WRITER_TEMPERATURE","0.35"))
+        self.max_tokens=int(os.getenv("NEWS_WRITER_MAX_TOKENS","3200"))
+        self.required_sections=["headline","dek","lead","key_facts","context","why_it_matters","what_happens_next","what_is_unknown","sources"]
+
+    def status(self)->Dict[str,Any]:
+        return {"status":"READY","engine":self.name,"version":self.version,"ai_connected":self.ai is not None,"target_words":self.target_words,"minimum_words":self.minimum_words,"maximum_words":self.maximum_words}
+
+    def write(self,article_plan:Dict[str,Any]=None,story:Dict[str,Any]=None,sources:List[Dict[str,Any]]=None,claims:List[Dict[str,Any]]=None,evidence:Dict[str,Any]=None,verification:Dict[str,Any]=None,synthesis:Dict[str,Any]=None,story_model:Dict[str,Any]=None,narrative:Dict[str,Any]=None,angles:Dict[str,Any]=None,psychology:Dict[str,Any]=None,reader_psychology:Dict[str,Any]=None,engagement:Dict[str,Any]=None,significance:Dict[str,Any]=None,ai=None,**kwargs)->Dict[str,Any]:
+        story=story if isinstance(story,dict) else {}
+        sources=sources if isinstance(sources,list) else []
+        claims=claims if isinstance(claims,list) else []
+        evidence=evidence if isinstance(evidence,dict) else {}
+        verification=verification if isinstance(verification,dict) else {}
+        synthesis=synthesis if isinstance(synthesis,dict) else {}
+        story_model=story_model if isinstance(story_model,dict) else synthesis
+        narrative=narrative if isinstance(narrative,dict) else {}
+        angles=angles if isinstance(angles,dict) else {}
+        psychology=psychology if isinstance(psychology,dict) else {}
+        reader_psychology=reader_psychology if isinstance(reader_psychology,dict) else {}
+        engagement=engagement if isinstance(engagement,dict) else {}
+        significance=significance if isinstance(significance,dict) else {}
+        article_plan=article_plan if isinstance(article_plan,dict) else {}
+        client=ai or self.ai
+        research=self._research(story,sources,claims,evidence,verification,synthesis,story_model,narrative,angles,psychology,reader_psychology,engagement,significance,article_plan)
+        if not client:
+            return self._fallback(research)
+        try:
+            raw=self._call_ai(client,research)
+            article=self._parse(raw)
+            article=self._clean_article(article,research)
+            if not article.get("content"):
+                raise ValueError("Writer returned empty article.")
+            article["status"]="ARTICLE_WRITTEN"
+            article["engine"]=self.name
+            article["version"]=self.version
+            article["word_count"]=self._word_count(article.get("content",""))
+            article["long_form"]=article["word_count"]>=self.minimum_words
+            article["publication_safe"]=True
+            article["research_grounded"]=True
+            article["source_count"]=len(sources)
+            article["source_url"]=self._text(story.get("source_url"))
+            article["image_url"]=self._text(story.get("image_url"))
+            return {"status":"JOURNALISM_COMPLETE","engine":self.name,"version":self.version,"article":article,"content":article["content"],"body":article["content"],"title":article.get("title",""),"headline":article.get("headline",article.get("title","")),"word_count":article["word_count"],"research_grounded":True,"publication_safe":True}
+        except Exception as exc:
+            logger.exception("Journalist AI writing failed.")
+            fallback=self._fallback(research)
+            fallback["writer_error"]=str(exc)
+            return fallback
+
+    def create(self,**kwargs)->Dict[str,Any]:
+        return self.write(**kwargs)
+
+    def generate(self,**kwargs)->Dict[str,Any]:
+        return self.write(**kwargs)
+
+    def produce(self,**kwargs)->Dict[str,Any]:
+        return self.write(**kwargs)
+
+    def compose(self,**kwargs)->Dict[str,Any]:
+        return self.write(**kwargs)
+
+    def build_article(self,newsroom_package:Dict[str,Any])->Dict[str,Any]:
+        return self.write(**self._package_args(newsroom_package))
+
+    def create_article_plan(self,newsroom_package:Dict[str,Any])->Dict[str,Any]:
+        return self.write(**self._package_args(newsroom_package))
+
+    def _package_args(self,p:Dict[str,Any])->Dict[str,Any]:
+        p=p if isinstance(p,dict) else {}
+        return {"article_plan":p.get("article_plan",p),"story":p.get("story",{}),"sources":p.get("sources",[]),"claims":p.get("claims",[]),"evidence":p.get("evidence",{}),"verification":p.get("verification",{}),"synthesis":p.get("synthesis",p.get("story_model",{})),"story_model":p.get("story_model",{}),"narrative":p.get("narrative",{}),"angles":p.get("angles",{}),"psychology":p.get("psychology",{}),"reader_psychology":p.get("reader_psychology",{}),"engagement":p.get("engagement",{}),"significance":p.get("significance",{}),"ai":p.get("ai")}
+
+    def _research(self,story,sources,claims,evidence,verification,synthesis,story_model,narrative,angles,psychology,reader_psychology,engagement,significance,article_plan)->Dict[str,Any]:
+        safe=[]
+        for item in claims:
+            if isinstance(item,str):
+                safe.append({"claim":item,"status":"CONFIRMED"})
                 continue
-
-            text = claim.get(
-                "claim",
-                claim.get(
-                    "text",
-                    ""
-                )
-            )
-
-            if text:
-
-                information.append(
-                    str(text)
-                )
-
-        return information
-
-    # =====================================================
-    # ARTICLE STATUS
-    # =====================================================
-
-    def _article_status(
-        self,
-        verification: Dict[str, Any]
-    ) -> str:
-
-        status = verification.get(
-            "status"
-        )
-
-        if status:
-
-            return str(
-                status
-            )
-
-        claims = verification.get(
-            "claims",
-            []
-        )
-
-        if not claims:
-
-            return "NEEDS_VERIFICATION"
-
-        safe_claims = self._safe_claims(
-            claims
-        )
-
-        if len(
-            safe_claims
-        ) == len(
-            claims
-        ):
-
-            return "READY_FOR_EDITORIAL_REVIEW"
-
-        if safe_claims:
-
-            return "PARTIALLY_VERIFIED"
-
-        return "NEEDS_VERIFICATION"
-
-    # =====================================================
-    # EDITORIAL NOTES
-    # =====================================================
-
-    def _editorial_notes(
-        self,
-        verification: Dict[str, Any],
-        significance: Dict[str, Any],
-        cluster: Dict[str, Any]
-    ) -> List[str]:
-
-        notes = []
-
-        verification_status = verification.get(
-            "status"
-        )
-
-        if verification_status:
-
-            notes.append(
-                "Verification status: "
-                + str(
-                    verification_status
-                )
-            )
-
-        significance_level = significance.get(
-            "level"
-        )
-
-        if significance_level:
-
-            notes.append(
-                "Story significance: "
-                + str(
-                    significance_level
-                )
-            )
-
-        if verification.get(
-            "disputed_claims"
-        ):
-
-            notes.append(
-                "Review disputed claims before publication."
-            )
-
-        if verification.get(
-            "unknowns"
-        ):
-
-            notes.append(
-                "Review unresolved information before publication."
-            )
-
-        if cluster.get(
-            "duplicate"
-        ):
-
-            notes.append(
-                "Check whether this story duplicates an existing story cluster."
-            )
-
-        if not notes:
-
-            notes.append(
-                "Editorial review required before publication."
-            )
-
-        return notes
-
-    # =====================================================
-    # WRITING RULES
-    # =====================================================
-
-    def _writing_rules(
-        self
-    ) -> List[str]:
-
-        return [
-
-            "Do not invent facts.",
-
-            "Use only information supported by the newsroom package.",
-
-            "Clearly distinguish confirmed information from unverified information.",
-
-            "Attribute claims when attribution is required.",
-
-            "Avoid sensationalism.",
-
-            "Avoid false certainty.",
-
-            "Prefer clear and direct language.",
-
-            "Preserve important context.",
-
-            "Do not manufacture conflict.",
-
-            "Do not turn speculation into fact.",
-
-            "Do not hide important uncertainty.",
-
-            "Prioritize accuracy over engagement."
-        ]
-    # =====================================================
-    # ARTICLE PLAN VALIDATION
-    # =====================================================
-
-    def validate_article_plan(
-        self,
-        article_plan: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        errors = []
-        warnings = []
-
-        if not isinstance(
-            article_plan,
-            dict
-        ):
-            return {
-                "valid": False,
-                "errors": [
-                    "Article plan must be a dictionary."
-                ],
-                "warnings": []
-            }
-
-        article = article_plan.get(
-            "article"
-        )
-
-        if not isinstance(
-            article,
-            dict
-        ):
-            errors.append(
-                "Article structure is missing."
-            )
-
-        else:
-
-            for section in self.required_sections:
-
-                if section not in article:
-
-                    errors.append(
-                        f"Missing article section: {section}"
-                    )
-
-        excluded_claims = article_plan.get(
-            "excluded_claims",
-            []
-        )
-
-        if excluded_claims:
-
-            warnings.append(
-                "Some claims were excluded because they were not sufficiently verified."
-            )
-
-        status = article_plan.get(
-            "status"
-        )
-
-        if status == "NEEDS_VERIFICATION":
-
-            warnings.append(
-                "The story still requires verification."
-            )
-
-        return {
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "warnings": warnings
-        }
-
-    # =====================================================
-    # ARTICLE PLAN SUMMARY
-    # =====================================================
-
-    def summarize_plan(
-        self,
-        article_plan: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        if not isinstance(
-            article_plan,
-            dict
-        ):
-            return {
-                "status": "INVALID",
-                "headline_ready": False,
-                "fact_count": 0,
-                "excluded_claim_count": 0
-            }
-
-        article = article_plan.get(
-            "article",
-            {}
-        )
-
-        if not isinstance(
-            article,
-            dict
-        ):
-            article = {}
-
-        key_facts = article.get(
-            "key_facts",
-            {}
-        )
-
-        if not isinstance(
-            key_facts,
-            dict
-        ):
-            key_facts = {}
-
-        facts = key_facts.get(
-            "facts",
-            []
-        )
-
-        if not isinstance(
-            facts,
-            list
-        ):
-            facts = []
-
-        excluded = article_plan.get(
-            "excluded_claims",
-            []
-        )
-
-        if not isinstance(
-            excluded,
-            list
-        ):
-            excluded = []
-
-        return {
-
-            "status":
-                article_plan.get(
-                    "status",
-                    "UNKNOWN"
-                ),
-
-            "headline_ready":
-                bool(
-                    article.get(
-                        "headline"
-                    )
-                ),
-
-            "fact_count":
-                len(
-                    facts
-                ),
-
-            "excluded_claim_count":
-                len(
-                    excluded
-                ),
-
-            "engine":
-                article_plan.get(
-                    "engine",
-                    self.name
-                ),
-
-            "version":
-                article_plan.get(
-                    "version",
-                    self.version
-                )
-        }
-
-    # =====================================================
-    # PUBLIC ARTICLE BUILDER
-    # =====================================================
-
-    def build_article(
-        self,
-        newsroom_package: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        plan = self.create_article_plan(
-            newsroom_package
-        )
-
-        validation = self.validate_article_plan(
-            plan
-        )
-
-        plan["validation"] = validation
-
-        plan["summary"] = self.summarize_plan(
-            plan
-        )
-
-        return plan
-
-
-# =========================================================
-# MODULE-LEVEL HELPER
-# =========================================================
-
-def create_article_plan(
-    newsroom_package: Dict[str, Any]
-) -> Dict[str, Any]:
-
-    engine = JournalistEngine()
-
-    return engine.create_article_plan(
-        newsroom_package
-    )
-
-
-# =========================================================
-# MODULE-LEVEL ARTICLE BUILDER
-# =========================================================
-
-def build_article(
-    newsroom_package: Dict[str, Any]
-) -> Dict[str, Any]:
-
-    engine = JournalistEngine()
-
-    return engine.build_article(
-        newsroom_package
-    )
-
-
-# =========================================================
-# BASIC TEST
-# =========================================================
-
-if __name__ == "__main__":
-
-    sample_package = {
-
-        "story": {
-
-            "original": {
-
-                "title":
-                    "Example News Story",
-
-                "source":
-                    "Example Source"
-            }
-        },
-
-        "significance": {
-
-            "level":
-                "MEDIUM"
-        },
-
-        "angles": {
-
-            "primary_angle": {
-
-                "type":
-                    "WHAT_HAPPENED"
-            }
-        },
-
-        "verification": {
-
-            "status":
-                "CONFIRMED",
-
-            "claims": [
-
-                {
-
-                    "claim":
-                        "This is a confirmed example claim.",
-
-                    "status":
-                        "CONFIRMED"
-                }
-            ]
-        },
-
-        "cluster": {
-
-            "duplicate":
-                False
-        }
-    }
-
-    engine = JournalistEngine()
-
-    result = engine.build_article(
-        sample_package
-    )
-
-    print(
-        result
-        )
+            if not isinstance(item,dict):continue
+            status=self._text(item.get("status",item.get("verification_status",item.get("publication_status","")))).upper()
+            if status in {"CONTRADICTED","DISPUTED","UNVERIFIED","HOLD_FOR_REVIEW","REJECTED"}:continue
+            text=self._text(item.get("claim",item.get("text",item.get("content",""))))
+            if text:safe.append({"claim":text,"status":status or "SUPPORTED","source":item.get("source","")})
+        verified=self._verified_claims(verification)
+        for item in verified:
+            if not any(self._text(x.get("claim")).lower()==self._text(item).lower() for x in safe):
+                safe.append({"claim":self._text(item),"status":"VERIFIED"})
+        return {"story":self._trim(story),"sources":self._trim_list(sources,30),"verified_claims":safe[:40],"evidence":self._trim(evidence),"verification":self._trim(verification),"synthesis":self._trim(synthesis),"story_model":self._trim(story_model),"narrative":self._trim(narrative),"angles":self._trim(angles),"psychology":self._trim(psychology),"reader_psychology":self._trim(reader_psychology),"engagement":self._trim(engagement),"significance":self._trim(significance),"article_plan":self._trim(article_plan)}
+
+    def _call_ai(self,client,research):
+        system="""You are the senior newsroom journalist inside an automated digital news organization. Write the actual publishable news article, not an outline, plan, prompt, notes, bullet list, or summary. Your job is to transform the supplied verified newsroom intelligence into a substantial, natural, human-sounding news report.
+STRICT FACTUAL RULES:
+1. Use only information supported by the supplied newsroom research.
+2. Never invent quotes, people, dates, numbers, events, motives, locations, reactions, statistics or background facts.
+3. Attribute claims clearly when they belong to a person, organization or source.
+4. Never turn an unverified or disputed claim into established fact.
+5. If important information is unknown, say so naturally rather than filling the gap.
+6. Do not manufacture balance by inventing an opposing view.
+7. Do not copy source wording unnecessarily. Synthesize and rewrite naturally.
+WRITING STANDARD:
+Write like a strong human reporter for a respected modern news website. The article must have a compelling but accurate headline, a useful dek, a strong opening paragraph, natural paragraph-to-paragraph transitions, clear chronology or logical progression, relevant context, important details, why the development matters, what may happen next based only on supported information, and a natural ending.
+Do not make every paragraph the same length. Avoid robotic patterns. Avoid repetitive sentences. Avoid generic filler such as 'What actually happened?', 'The bigger picture', 'The takeaway', or questions that contain no answer. Do not repeat the lead later. Do not use fake quotations.
+SEO:
+Make the article genuinely useful to a Google searcher. Naturally identify the people, organizations, places, event and subject readers are likely to search for. Use descriptive subheadings where helpful. Do not keyword-stuff. Do not write for search engines at the expense of readers.
+ENGAGEMENT:
+Create curiosity through the facts themselves. Explain why the development matters to ordinary readers when the evidence supports that connection. Keep the reader moving through the story without sensationalism or clickbait.
+LENGTH:
+Aim for approximately 1600 words when the research supports that depth. Never pad an article merely to hit a word count. Prefer a shorter accurate article over invented material.
+OUTPUT:
+Return ONLY valid JSON with these keys:
+title,headline,dek,lead,content,key_facts,context,why_it_matters,what_happens_next,what_is_unknown,sources,seo_title,seo_description,slug
+The content field must contain the complete article in Markdown. Do not put the headline or dek inside content because they are separate fields."""
+        user="NEWSROOM RESEARCH:\n"+json.dumps(research,ensure_ascii=False,default=str,separators=(",",":"))
+        messages=[{"role":"system","content":system},{"role":"user","content":user}]
+        return client.chat(messages,temperature=self.temperature,max_tokens=self.max_tokens)
+
+    def _parse(self,raw)->Dict[str,Any]:
+        text=str(raw or "").strip()
+        if text.startswith("```"):
+            text=re.sub(r"^```(?:json)?\s*","",text,flags=re.I)
+            text=re.sub(r"\s*```$","",text)
+        try:return json.loads(text)
+        except Exception:
+            match=re.search(r"\{.*\}",text,re.S)
+            if match:return json.loads(match.group(0))
+            raise ValueError("NVIDIA journalist response was not valid JSON.")
+
+    def _clean_article(self,a,research)->Dict[str,Any]:
+        if not isinstance(a,dict):return {}
+        title=self._clean_title(a.get("title") or a.get("headline") or research["story"].get("title") or research["story"].get("headline") or "Latest News Development")
+        content=self._clean_content(a.get("content") or a.get("body") or "")
+        lead=self._text(a.get("lead"))
+        if not lead:
+            lead=self._first_paragraph(content)
+        if not content and lead:content=lead
+        a["title"]=title
+        a["headline"]=self._clean_title(a.get("headline") or title)
+        a["dek"]=self._text(a.get("dek"))
+        a["lead"]=lead
+        a["content"]=content
+        a["body"]=content
+        a["slug"]=self._slug(a.get("slug") or title)
+        a["seo_title"]=self._text(a.get("seo_title") or title)[:70]
+        a["seo_description"]=self._text(a.get("seo_description") or lead)[:160]
+        for key in ("key_facts","context","why_it_matters","what_happens_next","what_is_unknown","sources"):
+            if not isinstance(a.get(key),list):a[key]=self._listify(a.get(key))
+        return a
+
+    def _clean_content(self,text):
+        text=str(text or "").strip()
+        text=re.sub(r"\n{3,}","\n\n",text)
+        text=re.sub(r"(?im)^\s*(What actually happened\?|The bigger picture|The takeaway)\s*\n?","",text)
+        lines=text.splitlines()
+        out=[]
+        for line in lines:
+            if out and line.strip() and line.strip()==out[-1].strip():continue
+            out.append(line.rstrip())
+        return "\n".join(out).strip()
+
+    def _fallback(self,research):
+        story=research["story"]
+        title=self._clean_title(story.get("title") or story.get("headline") or "Latest News Development")
+        summary=self._text(story.get("summary") or story.get("description") or research["synthesis"].get("central_event"))
+        facts=[self._text(x.get("claim")) for x in research["verified_claims"] if self._text(x.get("claim"))]
+        paragraphs=[]
+        if summary:paragraphs.append(summary)
+        for fact in facts:
+            if fact and fact not in paragraphs:paragraphs.append(fact)
+        content="\n\n".join(paragraphs)
+        return {"status":"JOURNALISM_FALLBACK","engine":self.name,"version":self.version,"article":{"title":title,"headline":title,"dek":summary[:180],"lead":summary or (facts[0] if facts else title),"content":content,"body":content,"slug":self._slug(title),"key_facts":facts,"context":[],"why_it_matters":[],"what_happens_next":[],"what_is_unknown":[],"sources":research["sources"],"seo_title":title[:70],"seo_description":(summary or title)[:160],"word_count":self._word_count(content),"long_form":False,"publication_safe":bool(content)},"content":content,"body":content,"title":title,"headline":title,"word_count":self._word_count(content),"research_grounded":True,"publication_safe":bool(content)}
