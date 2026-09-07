@@ -236,3 +236,189 @@ class ArticleEngine:
         return "\n\n".join(paragraphs)
 
 # === PART 1 ENDS HERE ===
+    def _ensure_depth(self,body:str,facts:List[str],context:List[str],consequences:List[str],next_steps:List[str],reactions:List[str],details:List[str],significance:Dict[str,Any])->str:
+        words=len(re.findall(r"\b[\w'-]+\b",body))
+        if words>=self.minimum_words:return body
+        values=details+context+consequences+reactions+next_steps
+        text=self._extract_significance(significance)
+        if text:values.append(text)
+        additions=self._paragraphize(values)
+        extra=[];existing=body.lower()
+        for item in additions:
+            if item.lower() in existing:continue
+            extra.append(item)
+            if len(re.findall(r"\b[\w'-]+\b"," ".join(extra)))>=600:break
+        if not extra:return body
+        return body+"\n\n## More context\n\n"+"\n\n".join(extra)
+
+    def _extract_angle(self,angles:Dict[str,Any])->str:
+        if not isinstance(angles,dict):return ""
+        for key in ("primary_angle","recommended_angle","main_angle","angle","description"):
+            text=self._text(angles.get(key))
+            if text:return text
+        return ""
+
+    def _extract_significance(self,significance:Dict[str,Any])->str:
+        if not isinstance(significance,dict):return ""
+        values=[]
+        for key in ("summary","assessment","analysis","importance","why_it_matters","impact"):
+            value=significance.get(key)
+            if isinstance(value,list):values.extend(value)
+            elif value:values.append(value)
+        return " ".join(self._unique_text(values)[:5])
+
+    def _extract_source_intelligence(self,data:Dict[str,Any])->str:
+        if not isinstance(data,dict):return ""
+        values=[]
+        for key in ("overall_quality","recommendation","source_quality","corroboration","independence"):
+            value=data.get(key)
+            if isinstance(value,list):values.extend(value)
+            elif value:values.append(value)
+        return " ".join(self._unique_text(values)[:4])
+
+    def _extract_reader_value(self,data:Dict[str,Any])->str:
+        if not isinstance(data,dict):return ""
+        values=[]
+        for key in ("reader_value","engagement_reason","audience_interest","reader_relevance"):
+            value=data.get(key)
+            if isinstance(value,list):values.extend(value)
+            elif value:values.append(value)
+        return " ".join(self._unique_text(values)[:3])
+
+    def _takeaway(self,title:str,facts:List[str],consequences:List[str],next_steps:List[str])->str:
+        parts=[]
+        if facts:parts.append(f"The central development is that {self._lower_first(facts[0])}")
+        if consequences:parts.append(f"The wider significance will depend on how the situation develops, particularly around {self._lower_first(consequences[0])}")
+        if next_steps:parts.append(f"The next development to watch is {self._lower_first(next_steps[0])}")
+        return " ".join(parts) if parts else title
+
+    def _source_links(self,package:Dict[str,Any])->List[Dict[str,str]]:
+        sources=package.get("sources",[]) if isinstance(package,dict) else []
+        if not isinstance(sources,list):return []
+        output=[];seen=set()
+        for source in sources:
+            if not isinstance(source,dict):continue
+            url=self._text(source.get("url",source.get("source_url","")))
+            if not url or not re.match(r"^https?://",url) or url in seen:continue
+            seen.add(url)
+            output.append({"name":self._text(source.get("name",source.get("publisher",""))),"url":url})
+        return output
+
+    def _publication_safe(self,package:Dict[str,Any])->bool:
+        verification=package.get("verification",{}) if isinstance(package,dict) else {}
+        editorial=package.get("editorial",{}) if isinstance(package,dict) else {}
+        if not isinstance(verification,dict):verification={}
+        if not isinstance(editorial,dict):editorial={}
+        editorial_gate=editorial.get("publication_gate")
+        decision=self._text(editorial.get("decision","")).upper()
+        errors=editorial.get("errors",[])
+        publication_ready=package.get("publication_ready")
+        status=self._text(verification.get("publication_status",verification.get("status",""))).upper()
+        approved={"APPROVED","APPROVED_WITH_WARNINGS"}
+        hard_blocks={"BLOCK_PUBLICATION","BLOCKED","FAILED","CONTRADICTED","HIGH_RISK","CRITICAL"}
+        has_errors=bool(errors)
+        editorial_approved=decision in approved and not has_errors
+        logger.info("PUBLICATION GATE CHECK | verification=%s | editorial_gate=%s | decision=%s | errors=%s | publication_ready=%s",status,editorial_gate,decision,len(errors) if isinstance(errors,list) else bool(errors),publication_ready)
+        if status in hard_blocks:
+            logger.warning("PUBLICATION BLOCKED | reason=VERIFICATION_%s",status)
+            return False
+        if publication_ready is False:
+            logger.warning("PUBLICATION BLOCKED | reason=PUBLICATION_READY_FALSE")
+            return False
+        if status=="HUMAN_REVIEW_REQUIRED":
+            if not editorial_approved:
+                logger.warning("PUBLICATION BLOCKED | reason=HUMAN_REVIEW_REQUIRED_WITHOUT_EDITOR_APPROVAL")
+                return False
+            logger.info("PUBLICATION REVIEW ACCEPTED | editor_decision=%s",decision)
+        if editorial_gate is False and not editorial_approved:
+            logger.warning("PUBLICATION BLOCKED | reason=EDITORIAL_GATE_FALSE")
+            return False
+        if has_errors:
+            logger.warning("PUBLICATION BLOCKED | reason=EDITORIAL_ERRORS")
+            return False
+        if decision and decision not in approved:
+            logger.warning("PUBLICATION BLOCKED | reason=EDITORIAL_DECISION_%s",decision)
+            return False
+        logger.info("PUBLICATION GATE PASSED | verification=%s | decision=%s",status,decision)
+        return True
+
+    def _category(self,story:Dict[str,Any],synthesis:Dict[str,Any],topic:str)->str:
+        value=self._text(story.get("category",story.get("story_type",synthesis.get("story_type","general"))))
+        return value.lower().replace(" ","-") if value else "general"
+
+    def _tags(self,package:Dict[str,Any],topic:str)->List[str]:
+        values=[]
+        if topic:values+=re.findall(r"\b[a-zA-Z][a-zA-Z0-9'-]{2,}\b",topic.lower())
+        story=package.get("story",{}) if isinstance(package,dict) else {}
+        entities=story.get("entities",{}) if isinstance(story,dict) else {}
+        if isinstance(entities,dict):
+            for key in ("people","organizations","locations","topics"):
+                value=entities.get(key,[])
+                if isinstance(value,list):values+=value
+        return self._unique_text(values)[:15]
+
+    def _slug(self,title:str)->str:
+        slug=self._text(title).lower()
+        slug=re.sub(r"[^a-z0-9\s-]","",slug)
+        slug=re.sub(r"[\s-]+","-",slug).strip("-")
+        return slug[:100]
+
+    def _excerpt(self,text:str)->str:
+        text=self._clean_text(text)
+        if len(text)<=260:return text
+        return text[:260].rsplit(" ",1)[0]+"..."
+
+    def _clean_title(self,text:str)->str:
+        return self._clean_text(text)[:140]
+
+    def _clean_text(self,text:Any)->str:
+        return re.sub(r"\s+"," ",self._text(text)).strip()
+
+    def _text(self,value:Any)->str:
+        if value is None:return ""
+        if isinstance(value,dict):
+            return self._clean_text(value.get("text",value.get("content",value.get("title",""))))
+        if isinstance(value,list):return self._clean_text(" ".join(str(item) for item in value))
+        return str(value).strip()
+
+    def _lower_first(self,text:str)->str:
+        text=self._clean_text(text)
+        return text[0].lower()+text[1:] if text else text
+
+    def _unique_text(self,values:List[Any])->List[str]:
+        output=[];seen=set()
+        for value in values:
+            text=self._clean_text(value)
+            if not text:continue
+            key=text.lower()
+            if key in seen:continue
+            seen.add(key);output.append(text)
+        return output
+
+    def status(self)->Dict[str,str]:
+        return {"engine":self.name,"version":self.version,"status":"READY"}
+
+
+article_engine=ArticleEngine()
+
+def create_article(package:Dict[str,Any])->Dict[str,Any]:
+    return article_engine.create(package)
+
+def create_article_plan(package:Dict[str,Any])->Dict[str,Any]:
+    return article_engine.create_article_plan(package)
+
+if __name__=="__main__":
+    test={
+        "story":{"title":"Officials announce a new development","summary":"Officials announced a new development that could have wider consequences for the public.","category":"general"},
+        "synthesis":{
+            "confirmed_facts":["Officials announced a new development.","The announcement follows earlier discussions."],
+            "context":["The issue has attracted attention because of its potential impact."],
+            "consequences":["The development could affect people directly involved in the situation."],
+            "next_steps":["Officials are expected to provide additional information."]
+        },
+        "verification":{},
+        "significance":{"reasons":["The development may affect the public."]},
+        "publication_ready":True
+    }
+    result=create_article(test)
+    print(result)
