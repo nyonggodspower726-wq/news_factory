@@ -8,11 +8,11 @@ from collectors.source_manager import source_manager
 
 logger=logging.getLogger("NewsFactory.Scheduler")
 NIGERIA_TZ=ZoneInfo("Africa/Lagos")
-RUN_TIME="14:10:00"
+RUN_TIME="15:25:00"
 NEWS_LIMIT=30
 NEWS_TOPIC=""
 RUN_IF_TIME_MISSED=False
-MEDIA_DIR=Path("media/generated")
+MEDIA_DIR=Path("ZoneInfo/generated")
 HTTP_HOST="0.0.0.0"
 HTTP_PORT=int(os.getenv("PORT","8088"))
 
