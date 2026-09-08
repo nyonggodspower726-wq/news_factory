@@ -14,7 +14,7 @@ logger=logging.getLogger("NewsFactory.PublicationOrchestrator")
 class PublicationOrchestrator:
     def __init__(self,article_engine:Optional[ArticleEngine]=None,seo_engine:Optional[SEOEngine]=None,media_manager:Optional[MediaManager]=None,platform_router:Optional[PlatformRouter]=None):
         self.name="Publication Orchestrator"
-        self.version="2.0.0"
+        self.version="2.1.0"
         self.article_engine=article_engine or ArticleEngine()
         self.seo_engine=seo_engine or SEOEngine()
         self.media_manager=media_manager or MediaManager()
@@ -89,13 +89,34 @@ class PublicationOrchestrator:
     def publish_approved(self,package:Dict[str,Any],platform:str="website")->Dict[str,Any]:
         if not isinstance(package,dict):
             return {"status":"BLOCKED","published":False,"reason":"Invalid pipeline package."}
+
+        journalism=package.get("journalism",package.get("journalist",package.get("journalist_result",{})))
+        if isinstance(journalism,dict):
+            journalism_status=str(journalism.get("status","")).strip().upper()
+            if journalism_status in {
+                "JOURNALISM_FAILED",
+                "JOURNALIST_FAILED",
+                "JOURNALISM_QUALITY_FAILED",
+                "JOURNALISM_BLOCKED",
+                "JOURNALISM_UNAVAILABLE",
+                "FAILED",
+                "ERROR",
+            }:
+                logger.warning("PUBLICATION BLOCKED | reason=JOURNALISM_%s",journalism_status)
+                return {"status":"BLOCKED","published":False,"reason":f"Journalism result is {journalism_status}."}
+            if journalism.get("publication_safe") is False:
+                logger.warning("PUBLICATION BLOCKED | reason=JOURNALISM_PUBLICATION_UNSAFE")
+                return {"status":"BLOCKED","published":False,"reason":"Journalism result is not publication-safe."}
+
         editorial=package.get("editorial",{})
         if isinstance(editorial,dict):
             decision=str(editorial.get("decision","")).strip().upper()
             if decision and decision!="APPROVED":
                 return {"status":"BLOCKED","published":False,"reason":f"Editorial decision is {decision}."}
+
         if package.get("publication_ready") is False:
             return {"status":"BLOCKED","published":False,"reason":"Pipeline marked package as not publication-ready."}
+
         return self.publish(package,platform)
 
     def status(self)->Dict[str,Any]:
