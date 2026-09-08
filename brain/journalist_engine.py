@@ -47,31 +47,63 @@ class JournalistEngine:
         verified=self._verified_claims(claims,verification)
         summary=self._text(synthesis) or self._text(plan.get("summary")) or self._text(story.get("summary")) or self._text(story.get("description"))
         title=self._text(plan.get("title")) or self._text(story.get("title")) or self._text(story.get("headline")) or "News report"
+
         usable=[]
         for s in sources:
-            if not isinstance(s,dict): continue
+            if not isinstance(s,dict):
+                continue
             url=self._text(s.get("url") or s.get("source_url") or s.get("link"))
             name=self._text(s.get("source") or s.get("source_name") or s.get("publisher") or s.get("name"))
             text=self._text(s.get("content") or s.get("description") or s.get("summary") or s.get("text"))
-            if url or text: usable.append({"name":name,"url":url,"text":text[:14000]})
+            if url or text:
+                usable.append({"name":name,"url":url,"text":text[:7000]})
+
         facts=[]
         for item in verified:
             text=self._text(item.get("claim") or item.get("text") or item.get("statement") or item.get("fact")) if isinstance(item,dict) else self._text(item)
-            if text: facts.append(text)
+            if text:
+                facts.append(text[:1000])
+
         for e in evidence:
             text=self._text(e.get("text") or e.get("evidence") or e.get("claim")) if isinstance(e,dict) else self._text(e)
-            if text: facts.append(text)
+            if text:
+                facts.append(text[:1000])
+
         facts=self._unique(facts)
+
         context=[]
         for name,obj in (("story_model",story_model),("narrative",narrative),("angles",angles),("psychology",psychology),("reader_psychology",reader_psychology),("engagement",engagement),("significance",significance)):
             text=self._structured_text(obj)
-            if text: context.append(f"{name}: {text[:8000]}")
+            if text:
+                context.append(f"{name}: {text[:5000]}")
+
+        usable=usable[:12]
+        facts=facts[:50]
+        context=context[:12]
         source_text=sum(len(x["text"]) for x in usable)
+        context_text=sum(len(x) for x in context)
+
         publishable=bool(summary or facts or usable) and bool(verified or facts or summary or usable)
-        return {"title":title,"summary":summary,"facts":facts[:60],"sources":usable[:20],"context":context[:20],"plan":plan,"story":story,"verification":verification,"source_text_size":source_text,"publishable":publishable}
+
+        logger.info("JOURNALIST RESEARCH | sources=%s source_chars=%s facts=%s context_blocks=%s context_chars=%s",len(usable),source_text,len(facts),len(context),context_text)
+
+        return {
+            "title":title,
+            "summary":summary[:6000],
+            "facts":facts,
+            "sources":usable,
+            "context":context,
+            "plan":plan,
+            "story":story,
+            "verification":verification,
+            "source_text_size":source_text,
+            "context_text_size":context_text,
+            "publishable":publishable
+        }
 
     def _verified_claims(self,claims,verification):
-        out=[]; bad=("unverified","disputed","false","contradict","rejected","unsupported","uncorroborated","fabricated")
+        out=[]
+        bad=("unverified","disputed","false","contradict","rejected","unsupported","uncorroborated","fabricated")
         checked={}
         for key in ("claims","results","verified_claims","fact_check"):
             value=verification.get(key) if isinstance(verification,dict) else None
@@ -79,17 +111,21 @@ class JournalistEngine:
                 for item in value:
                     if isinstance(item,dict):
                         ident=self._text(item.get("claim_id") or item.get("id") or item.get("claim") or item.get("text")).lower()
-                        if ident: checked[ident]=item
+                        if ident:
+                            checked[ident]=item
         for c in claims:
             if isinstance(c,str):
-                if c.strip() and not any(x in c.lower() for x in bad): out.append(c.strip())
+                if c.strip() and not any(x in c.lower() for x in bad):
+                    out.append(c.strip())
                 continue
-            if not isinstance(c,dict): continue
+            if not isinstance(c,dict):
+                continue
             text=self._text(c.get("claim") or c.get("text") or c.get("statement") or c.get("fact"))
             ident=self._text(c.get("claim_id") or c.get("id") or text).lower()
             match=checked.get(ident,{})
             status=self._text(match.get("status") or match.get("verification") or match.get("verdict") or c.get("status") or c.get("verification") or c.get("verdict")).lower()
-            if text and not any(x in status for x in bad) and (not status or any(x in status for x in ("verified","confirmed","supported","corroborated","true","high","strong"))): out.append(text)
+            if text and not any(x in status for x in bad) and (not status or any(x in status for x in ("verified","confirmed","supported","corroborated","true","high","strong"))):
+                out.append(text)
         return self._unique(out)
 
     def _call_ai(self,client,research):
@@ -101,19 +137,46 @@ Do not repeat facts to inflate length. Do not pad with generic advice. Do not cr
 Aim for about {self.target_words} words when the supplied evidence supports it. Publication range: {self.min_words}-{self.max_words}. If evidence cannot support that length, write only supported material; the quality gate will reject insufficient work.
 Return ONLY valid JSON with exactly these fields: title,headline,dek,lead,content,key_facts,context,why_it_matters,what_happens_next,what_is_unknown,sources,seo_title,seo_description,slug.
 content must be the complete article body. Do not include a title, byline, JSON fences, or meta commentary inside content.'''
-        payload={"title":research["title"],"summary":research["summary"],"verified_facts":research["facts"],"sources":research["sources"],"editorial_context":research["context"]}
-        response=client.chat(messages=[{"role":"system","content":system},{"role":"user","content":json.dumps(payload,ensure_ascii=False)}],temperature=self.temperature,max_tokens=self.max_tokens)
+
+        payload={
+            "title":research["title"],
+            "summary":research["summary"],
+            "verified_facts":research["facts"],
+            "sources":research["sources"],
+            "editorial_context":research["context"]
+        }
+
+        source_chars=research.get("source_text_size",0)
+        context_chars=research.get("context_text_size",0)
+        payload_chars=len(json.dumps(payload,ensure_ascii=False))
+
+        logger.info("JOURNALIST REQUEST | sources=%s source_chars=%s facts=%s context_chars=%s payload_chars=%s thinking=OFF max_tokens=%s",len(research["sources"]),source_chars,len(research["facts"]),context_chars,payload_chars,self.max_tokens)
+
+        messages=[
+            {"role":"system","content":system},
+            {"role":"user","content":json.dumps(payload,ensure_ascii=False)}
+        ]
+
+        try:
+            response=client.chat(messages=messages,temperature=self.temperature,max_tokens=self.max_tokens,enable_thinking=False)
+        except TypeError:
+            logger.warning("Journalist client does not support enable_thinking; retrying without it.")
+            response=client.chat(messages=messages,temperature=self.temperature,max_tokens=self.max_tokens)
+
         raw=self._strip_fences(self._response_text(response))
-        if not raw: raise ValueError("NVIDIA returned empty journalist content")
+        if not raw:
+            raise ValueError("NVIDIA returned empty journalist content")
         return json.loads(raw)
 
     def _response_text(self,response):
-        if isinstance(response,str): return response
+        if isinstance(response,str):
+            return response
         if isinstance(response,dict):
             choices=response.get("choices")
             if isinstance(choices,list) and choices:
                 m=choices[0].get("message") if isinstance(choices[0],dict) else None
-                if isinstance(m,dict): return str(m.get("content") or "")
+                if isinstance(m,dict):
+                    return str(m.get("content") or "")
                 return str(choices[0].get("text") or "") if isinstance(choices[0],dict) else ""
             return str(response.get("content") or response.get("text") or "")
         choices=getattr(response,"choices",None)
@@ -123,13 +186,30 @@ content must be the complete article body. Do not include a title, byline, JSON 
         return str(getattr(response,"content","") or "")
 
     def _clean_article(self,result,research):
-        if not isinstance(result,dict): raise ValueError("Journalist AI returned invalid JSON object")
+        if not isinstance(result,dict):
+            raise ValueError("Journalist AI returned invalid JSON object")
         title=self._clean_text(result.get("title") or result.get("headline") or research["title"])
         headline=self._clean_text(result.get("headline") or title)
         lead=self._clean_text(result.get("lead"))
         content=self._clean_content(result.get("content") or "")
-        if not content: content=lead
-        return {"title":title,"headline":headline,"dek":self._clean_text(result.get("dek")),"lead":lead,"content":content,"key_facts":self._clean_list(result.get("key_facts"),research["facts"]),"context":self._clean_list(result.get("context"),research["context"]),"why_it_matters":self._clean_text(result.get("why_it_matters")),"what_happens_next":self._clean_text(result.get("what_happens_next")),"what_is_unknown":self._clean_text(result.get("what_is_unknown")),"sources":result.get("sources") if isinstance(result.get("sources"),list) else research["sources"],"seo_title":self._clean_text(result.get("seo_title") or title),"seo_description":self._clean_text(result.get("seo_description") or result.get("dek") or lead)[:320],"slug":self._slug(result.get("slug") or title)}
+        if not content:
+            content=lead
+        return {
+            "title":title,
+            "headline":headline,
+            "dek":self._clean_text(result.get("dek")),
+            "lead":lead,
+            "content":content,
+            "key_facts":self._clean_list(result.get("key_facts"),research["facts"]),
+            "context":self._clean_list(result.get("context"),research["context"]),
+            "why_it_matters":self._clean_text(result.get("why_it_matters")),
+            "what_happens_next":self._clean_text(result.get("what_happens_next")),
+            "what_is_unknown":self._clean_text(result.get("what_is_unknown")),
+            "sources":result.get("sources") if isinstance(result.get("sources"),list) else research["sources"],
+            "seo_title":self._clean_text(result.get("seo_title") or title),
+            "seo_description":self._clean_text(result.get("seo_description") or result.get("dek") or lead)[:320],
+            "slug":self._slug(result.get("slug") or title)
+        }
 
     def _clean_content(self,text):
         text=str(text or "").strip()
@@ -139,81 +219,140 @@ content must be the complete article body. Do not include a title, byline, JSON 
         text=re.sub(rf"(?im)^\s*(?:{generic})\s*$","",text)
         text=re.sub(r"(?im)^\s*By\s+[A-Za-z][A-Za-z .,'’-]{1,80}\s*$","",text)
         text=re.sub(r"\n{3,}","\n\n",text)
-        paragraphs=[]; seen=set()
+        paragraphs=[]
+        seen=set()
         for p in re.split(r"\n\s*\n",text):
             p=re.sub(r"\s+"," ",p).strip()
-            if not p: continue
+            if not p:
+                continue
             key=re.sub(r"[^a-z0-9]","",p.lower())
-            if key in seen: continue
-            seen.add(key); paragraphs.append(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            paragraphs.append(p)
         return "\n\n".join(paragraphs)
 
     def _quality_ok(self,article,research):
         content=article.get("content","")
         words=self._word_count(content)
-        if words<self.min_words or words>self.max_words+300: return False
+        if words<self.min_words or words>self.max_words+300:
+            return False
         paragraphs=self._paragraphs(content)
-        if len(paragraphs)<8 or len(self._sentences(content))<14: return False
+        if len(paragraphs)<8 or len(self._sentences(content))<14:
+            return False
         low=content.lower()
         banned=("what actually happened?","what remains unclear?","why is this happening now?","who is affected?","what happens next?","the takeaway","the bigger picture","what information is still unconfirmed?")
-        if any(x in low for x in banned): return False
-        if len(paragraphs)!=len(set(p.lower() for p in paragraphs)): return False
-        if research["facts"] and sum(self._fact_overlap(f,content) for f in research["facts"])<max(1,min(3,len(research["facts"]))): return False
+        if any(x in low for x in banned):
+            return False
+        if len(paragraphs)!=len(set(p.lower() for p in paragraphs)):
+            return False
+        if research["facts"] and sum(self._fact_overlap(f,content) for f in research["facts"])<max(1,min(3,len(research["facts"]))):
+            return False
         return True
 
     def _quality_score(self,article,research):
-        words=self._word_count(article.get("content","")); score=50
-        if words>=self.min_words: score+=15
-        if words>=self.target_words: score+=10
-        if len(self._paragraphs(article.get("content","")))>=12: score+=5
-        if research["facts"]: score+=10
-        if research["sources"]: score+=10
+        words=self._word_count(article.get("content",""))
+        score=50
+        if words>=self.min_words:
+            score+=15
+        if words>=self.target_words:
+            score+=10
+        if len(self._paragraphs(article.get("content","")))>=12:
+            score+=5
+        if research["facts"]:
+            score+=10
+        if research["sources"]:
+            score+=10
         return min(score,100)
 
     def _failure(self,status,message,research):
-        return {"title":research.get("title",""),"headline":research.get("title",""),"dek":"","lead":"","content":"","key_facts":research.get("facts",[]),"context":research.get("context",[]),"why_it_matters":"","what_happens_next":"","what_is_unknown":message,"sources":research.get("sources",[]),"seo_title":research.get("title",""),"seo_description":"","slug":self._slug(research.get("title","news")),"status":status,"publication_safe":False,"research_grounded":False,"quality_score":0}
+        return {
+            "title":research.get("title",""),
+            "headline":research.get("title",""),
+            "dek":"",
+            "lead":"",
+            "content":"",
+            "key_facts":research.get("facts",[]),
+            "context":research.get("context",[]),
+            "why_it_matters":"",
+            "what_happens_next":"",
+            "what_is_unknown":message,
+            "sources":research.get("sources",[]),
+            "seo_title":research.get("title",""),
+            "seo_description":"",
+            "slug":self._slug(research.get("title","news")),
+            "status":status,
+            "publication_safe":False,
+            "research_grounded":False,
+            "quality_score":0
+        }
 
     def _structured_text(self,value):
-        if value is None: return ""
+        if value is None:
+            return ""
         if isinstance(value,dict):
             parts=[]
             for k,v in value.items():
                 t=self._clean_text(v)
-                if t: parts.append(f"{k}: {t}")
+                if t:
+                    parts.append(f"{k}: {t}")
             return "; ".join(parts)
-        if isinstance(value,list): return "; ".join(self._clean_text(x) for x in value if self._clean_text(x))
+        if isinstance(value,list):
+            return "; ".join(self._clean_text(x) for x in value if self._clean_text(x))
         return self._clean_text(value)
 
     def _clean_list(self,value,fallback):
-        if not isinstance(value,list): return fallback[:20]
+        if not isinstance(value,list):
+            return fallback[:20]
         out=[]
         for item in value:
             t=self._clean_text(item)
-            if t and t not in out: out.append(t)
+            if t and t not in out:
+                out.append(t)
         return out[:30] or fallback[:20]
 
     def _unique(self,values):
-        out=[];seen=set()
+        out=[]
+        seen=set()
         for v in values:
-            t=self._clean_text(v); k=t.lower()
-            if t and k not in seen: seen.add(k);out.append(t)
+            t=self._clean_text(v)
+            k=t.lower()
+            if t and k not in seen:
+                seen.add(k)
+                out.append(t)
         return out
 
-    def _paragraphs(self,text): return [p.strip() for p in re.split(r"\n\s*\n",text or "") if p.strip()]
-    def _sentences(self,text): return [s.strip() for s in re.split(r"(?<=[.!?])\s+",text or "") if len(s.strip())>35]
-    def _word_count(self,text): return len(re.findall(r"\b[\w’'-]+\b",text or ""))
+    def _paragraphs(self,text):
+        return [p.strip() for p in re.split(r"\n\s*\n",text or "") if p.strip()]
+
+    def _sentences(self,text):
+        return [s.strip() for s in re.split(r"(?<=[.!?])\s+",text or "") if len(s.strip())>35]
+
+    def _word_count(self,text):
+        return len(re.findall(r"\b[\w’'-]+\b",text or ""))
+
     def _fact_overlap(self,fact,content):
         words=set(w.lower() for w in re.findall(r"\b[a-zA-Z]{5,}\b",self._clean_text(fact)))
         return not words or sum(w in content.lower() for w in words)>=max(1,min(3,len(words)))
+
     def _clean_text(self,value):
-        if value is None:return ""
-        if isinstance(value,(dict,list)):return json.dumps(value,ensure_ascii=False)
+        if value is None:
+            return ""
+        if isinstance(value,(dict,list)):
+            return json.dumps(value,ensure_ascii=False)
         return re.sub(r"\s+"," ",str(value)).strip()
-    def _text(self,value): return self._clean_text(value)
+
+    def _text(self,value):
+        return self._clean_text(value)
+
     def _strip_fences(self,text):
         return re.sub(r"^```(?:json)?\s*|\s*```$","",str(text or "").strip(),flags=re.I).strip()
+
     def _slug(self,value):
-        t=self._clean_text(value).lower();t=re.sub(r"[^a-z0-9\s-]","",t);t=re.sub(r"[\s_-]+","-",t).strip("-");return t[:140] or "news-story"
+        t=self._clean_text(value).lower()
+        t=re.sub(r"[^a-z0-9\s-]","",t)
+        t=re.sub(r"[\s_-]+","-",t).strip("-")
+        return t[:140] or "news-story"
 
 JournalistEngineV4=JournalistEngine
 JournalistEngineV3=JournalistEngine
