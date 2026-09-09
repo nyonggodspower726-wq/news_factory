@@ -6,11 +6,11 @@ logger=logging.getLogger(__name__)
 class JournalistEngine:
     def __init__(self,ai=None):
         self.ai=ai
-        self.target_words=int(os.getenv("JOURNALIST_TARGET_WORDS","1600"))
+        self.target_words=int(os.getenv("JOURNALIST_TARGET_WORDS","1400"))
         self.min_words=int(os.getenv("JOURNALIST_MIN_WORDS","1000"))
         self.max_words=int(os.getenv("JOURNALIST_MAX_WORDS","2400"))
         self.temperature=float(os.getenv("JOURNALIST_TEMPERATURE","0.45"))
-        self.max_tokens=int(os.getenv("JOURNALIST_MAX_TOKENS","3500"))
+        self.max_tokens=int(os.getenv("JOURNALIST_MAX_TOKENS","5500"))
 
     def write(self,article_plan=None,story=None,sources=None,claims=None,evidence=None,verification=None,synthesis=None,story_model=None,narrative=None,angles=None,psychology=None,reader_psychology=None,engagement=None,significance=None,ai=None,**kwargs):
         client=ai or self.ai
@@ -134,7 +134,7 @@ Use ONLY the supplied research. Never invent facts, names, quotes, statistics, d
 Write specifically for THIS story. Use a strong factual lead, then develop the story naturally with verified chronology, context, reactions, consequences and other story-specific material when supported. Vary paragraph length and structure. Use subheads only when genuinely useful and never use generic/template headings or questions.
 Never print headings such as "What actually happened?", "The bigger picture", "The takeaway", "What remains unclear?", "Why is this happening now?", "Who is affected?", "What happens next?", "What does this mean?", or similar template language. Those questions may guide your reasoning internally but must never appear as headings or filler in the article.
 Do not repeat facts to inflate length. Do not pad with generic advice. Do not create fake suspense. End naturally on the latest confirmed position, meaningful unresolved issue, or verified next development.
-Aim for about {self.target_words} words when the supplied evidence supports it. Publication range: {self.min_words}-{self.max_words}. If evidence cannot support that length, write only supported material; the quality gate will reject insufficient work.
+Aim for approximately 1,400 words and normally produce between 1,200 and 1,600 words when the supplied evidence supports it. NEVER intentionally produce a short article. The article must contain at least {self.min_words} words of substantive, story-specific journalism. Publication range: {self.min_words}-{self.max_words}. If the supplied evidence supports more detail, fully develop the story rather than stopping early. If evidence cannot support additional detail, do not invent material; the quality gate will reject insufficient work.
 Return ONLY valid JSON with exactly these fields: title,headline,dek,lead,content,key_facts,context,why_it_matters,what_happens_next,what_is_unknown,sources,seo_title,seo_description,slug.
 content must be the complete article body. Do not include a title, byline, JSON fences, or meta commentary inside content.'''
 
