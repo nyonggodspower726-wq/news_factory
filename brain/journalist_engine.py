@@ -82,7 +82,7 @@ class JournalistEngine:
                 )
 
                 article = self._clean_article(result, research)
-                words = self._word_count(article)
+                words = self._word_count(article.get("content", ""))
 
                 logger.info(
                     "JOURNALIST OUTPUT | attempt=%s words=%s target=%s min=%s",
@@ -128,7 +128,10 @@ class JournalistEngine:
                 )
 
             except Exception as exc:
-                logger.exception("Journalist AI generation failed: %s", exc)
+                logger.exception(
+                    "Journalist AI generation failed: %s",
+                    exc,
+                )
 
                 if attempt < self.max_retries:
                     logger.warning(
@@ -214,10 +217,12 @@ class JournalistEngine:
                     or source.get("publisher")
                     or source.get("source")
                 )
+
                 url = self._text(
                     source.get("url")
                     or source.get("source_url")
                 )
+
                 text = self._text(
                     source.get("text")
                     or source.get("content")
@@ -245,11 +250,19 @@ class JournalistEngine:
             ("significance", significance),
         ):
             text = self._structured_text(obj)
+
             if text:
                 context.append(f"{name}: {text[:3000]}")
 
-        source_chars = sum(len(x.get("text", "")) for x in usable_sources)
-        context_chars = sum(len(x) for x in context)
+        source_chars = sum(
+            len(x.get("text", ""))
+            for x in usable_sources
+        )
+
+        context_chars = sum(
+            len(x)
+            for x in context
+        )
 
         logger.info(
             "JOURNALIST RESEARCH | sources=%s source_chars=%s facts=%s context_blocks=%s context_chars=%s",
@@ -260,7 +273,13 @@ class JournalistEngine:
             context_chars,
         )
 
-        publishable = bool(title and (summary or facts or usable_sources))
+        publishable = bool(
+            title and (
+                summary
+                or facts
+                or usable_sources
+            )
+        )
 
         return {
             "title": title,
@@ -274,7 +293,8 @@ class JournalistEngine:
 
     def _call_ai(self, client, research, expansion=False):
         facts = "\n".join(
-            f"- {fact[:1000]}" for fact in research["facts"]
+            f"- {fact[:1000]}"
+            for fact in research["facts"]
         )
 
         source_text = "\n\n".join(
@@ -286,7 +306,9 @@ class JournalistEngine:
             for source in research["sources"]
         )
 
-        context = "\n".join(research["context"])
+        context = "\n".join(
+            research["context"]
+        )
 
         if expansion:
             instruction = f"""
@@ -384,8 +406,14 @@ EDITORIAL CONTEXT:
 """
 
         messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
+            {
+                "role": "system",
+                "content": system,
+            },
+            {
+                "role": "user",
+                "content": user,
+            },
         ]
 
         logger.info(
@@ -403,288 +431,21 @@ EDITORIAL CONTEXT:
         )
 
         if not raw:
-            raise ValueError("Journalist AI returned an empty response.")
+            raise ValueError(
+                "Journalist AI returned an empty response."
+            )
+
+        if isinstance(raw, dict):
+            return raw
 
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
             repaired = self._repair_json_controls(raw)
+
             try:
                 return json.loads(repaired)
             except json.JSONDecodeError as exc:
                 raise ValueError(
                     f"Invalid journalist JSON: {exc}"
                 ) from exc
-
-    def _clean_article(self, result, research):
-        if not isinstance(result, dict):
-            raise ValueError("Journalist AI response is not an object.")
-
-        title = self._text(
-            result.get("headline")
-            or result.get("title")
-            or research["title"]
-        )
-
-        content = self._clean_content(
-            result.get("content")
-            or result.get("body")
-            or result.get("article")
-            or ""
-        )
-
-        lead = self._clean_content(
-            result.get("lead")
-            or result.get("dek")
-            or ""
-        )
-
-        if not lead:
-            lead = self._derive_lead(content)
-
-        excerpt = self._text(
-            result.get("excerpt")
-            or lead
-        )
-
-        sections = result.get("sections", [])
-        if not isinstance(sections, list):
-            sections = []
-
-        return {
-            "title": title,
-            "headline": title,
-            "lead": lead,
-            "excerpt": excerpt[:400],
-            "content": content,
-            "body": content,
-            "sections": sections,
-        }
-
-    def _quality_ok(self, article, research):
-        content = self._clean_content(article.get("content", ""))
-        lead = self._clean_content(article.get("lead", ""))
-
-        words = self._word_count(content)
-
-        if not lead:
-            logger.warning("Journalist quality gate rejected: lead missing")
-            return False
-
-        if words < self.min_words:
-            return False
-
-        paragraphs = [
-            p.strip()
-            for p in re.split(r"\n\s*\n", content)
-            if p.strip()
-        ]
-
-        if len(paragraphs) < 8:
-            logger.warning(
-                "Journalist quality gate rejected: paragraphs=%s",
-                len(paragraphs),
-            )
-            return False
-
-        sentences = re.split(r"(?<=[.!?])\s+", content)
-
-        if len([x for x in sentences if x.strip()]) < 14:
-            logger.warning("Journalist quality gate rejected: insufficient sentences")
-            return False
-
-        if self._template_score(content) > 3:
-            logger.warning("Journalist quality gate rejected: repetitive template language")
-            return False
-
-        facts = research.get("facts", [])
-        if facts:
-            matches = 0
-            lowered = content.lower()
-
-            for fact in facts[:10]:
-                terms = [
-                    x.lower()
-                    for x in re.findall(r"[A-Za-z0-9]{5,}", fact)
-                ]
-
-                if terms and sum(term in lowered for term in terms) >= min(3, len(terms)):
-                    matches += 1
-
-            if matches == 0:
-                logger.warning(
-                    "Journalist quality gate rejected: weak evidence overlap"
-                )
-                return False
-
-        return True
-
-    def _derive_lead(self, content):
-        if not content:
-            return ""
-
-        paragraphs = [
-            p.strip()
-            for p in re.split(r"\n\s*\n", content)
-            if p.strip()
-        ]
-
-        for paragraph in paragraphs:
-            clean = re.sub(r"^#+\s*", "", paragraph).strip()
-
-            if len(clean.split()) >= 20:
-                return clean
-
-        return paragraphs[0] if paragraphs else ""
-
-    def _clean_content(self, value):
-        text = self._text(value)
-        text = re.sub(r"\r\n?", "\n", text)
-        text = re.sub(r"[ \t]+", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text.strip()
-
-    def _word_count(self, text):
-        return len(re.findall(r"\b[\w'-]+\b", text or ""))
-
-    def _template_score(self, text):
-        forbidden = [
-            "what happens next",
-            "the bigger picture",
-            "why it matters",
-            "who is affected",
-            "what remains unclear",
-            "the takeaway",
-            "what you need to know",
-        ]
-
-        lowered = (text or "").lower()
-        return sum(lowered.count(item) for item in forbidden)
-
-    def _repair_json_controls(self, raw):
-        output = []
-        inside_string = False
-        escaped = False
-
-        for char in raw:
-            if escaped:
-                output.append(char)
-                escaped = False
-                continue
-
-            if char == "\\":
-                output.append(char)
-                escaped = True
-                continue
-
-            if char == '"':
-                output.append(char)
-                inside_string = not inside_string
-                continue
-
-            if inside_string:
-                if char == "\n":
-                    output.append("\\n")
-                    continue
-                if char == "\r":
-                    output.append("\\r")
-                    continue
-                if char == "\t":
-                    output.append("\\t")
-                    continue
-                if ord(char) < 32:
-                    output.append(f"\\u{ord(char):04x}")
-                    continue
-
-            output.append(char)
-
-        return "".join(output)
-
-    def _claim_text(self, value):
-        if isinstance(value, dict):
-            status = self._text(
-                value.get("status")
-                or value.get("verification_status")
-            ).upper()
-
-            if status in {
-                "CONTRADICTED",
-                "DISPUTED",
-                "UNVERIFIED",
-                "HOLD_FOR_REVIEW",
-            }:
-                return ""
-
-            return self._text(
-                value.get("text")
-                or value.get("claim")
-                or value.get("content")
-            )
-
-        return self._text(value)
-
-    def _structured_text(self, value):
-        if not value:
-            return ""
-
-        if isinstance(value, dict):
-            parts = []
-
-            for key, item in value.items():
-                if item in (None, "", [], {}):
-                    continue
-
-                if isinstance(item, (dict, list)):
-                    rendered = self._structured_text(item)
-                else:
-                    rendered = self._text(item)
-
-                if rendered:
-                    parts.append(f"{key}: {rendered}")
-
-            return " | ".join(parts)
-
-        if isinstance(value, list):
-            return " | ".join(
-                self._structured_text(item)
-                for item in value
-                if self._structured_text(item)
-            )
-
-        return self._text(value)
-
-    def _text(self, value):
-        if value is None:
-            return ""
-
-        if isinstance(value, dict):
-            return str(
-                value.get("text")
-                or value.get("content")
-                or value.get("title")
-                or ""
-            ).strip()
-
-        if isinstance(value, list):
-            return " ".join(
-                self._text(item)
-                for item in value
-                if self._text(item)
-            ).strip()
-
-        return str(value).strip()
-
-    def _failure(self, status, reason, **extra):
-        return {
-            "status": status,
-            "publication_safe": False,
-            "publication_status": status,
-            "error": reason,
-            "reason": reason,
-            "word_count": extra.get("word_count", 0),
-            "words": extra.get("word_count", 0),
-        }
-
-
-JournalistEngineV4 = JournalistEngine
-JournalistEngineV3 = JournalistEngine
