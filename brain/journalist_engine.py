@@ -136,7 +136,8 @@ Never print headings such as "What actually happened?", "The bigger picture", "T
 Do not repeat facts to inflate length. Do not pad with generic advice. Do not create fake suspense. End naturally on the latest confirmed position, meaningful unresolved issue, or verified next development.
 Aim for approximately 1,400 words and normally produce between 1,200 and 1,600 words when the supplied evidence supports it. NEVER intentionally produce a short article. The article must contain at least {self.min_words} words of substantive, story-specific journalism. Publication range: {self.min_words}-{self.max_words}. If the supplied evidence supports more detail, fully develop the story rather than stopping early. If evidence cannot support additional detail, do not invent material; the quality gate will reject insufficient work.
 Return ONLY valid JSON with exactly these fields: title,headline,dek,lead,content,key_facts,context,why_it_matters,what_happens_next,what_is_unknown,sources,seo_title,seo_description,slug.
-content must be the complete article body. Do not include a title, byline, JSON fences, or meta commentary inside content.'''
+content must be the complete article body. Do not include a title, byline, JSON fences, or meta commentary inside content.
+All JSON string values MUST use valid JSON escaping. Never place raw line breaks, tabs, carriage returns, or other control characters inside JSON string values. Escape quotation marks and backslashes correctly.'''
 
         payload={
             "title":research["title"],
@@ -166,7 +167,53 @@ content must be the complete article body. Do not include a title, byline, JSON 
         raw=self._strip_fences(self._response_text(response))
         if not raw:
             raise ValueError("NVIDIA returned empty journalist content")
-        return json.loads(raw)
+
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.warning("Journalist returned malformed JSON; attempting safe control-character repair.")
+            repaired=self._repair_json_controls(raw)
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                logger.error("Journalist JSON repair failed | position=%s line=%s column=%s",exc.pos,exc.lineno,exc.colno)
+                raise exc
+
+    def _repair_json_controls(self,text):
+        out=[]
+        in_string=False
+        escaped=False
+        for ch in str(text or ""):
+            code=ord(ch)
+            if in_string:
+                if escaped:
+                    out.append(ch)
+                    escaped=False
+                    continue
+                if ch=="\\":
+                    out.append(ch)
+                    escaped=True
+                    continue
+                if ch=='"':
+                    out.append(ch)
+                    in_string=False
+                    continue
+                if code<32:
+                    if ch=="\n":
+                        out.append("\\n")
+                    elif ch=="\r":
+                        out.append("\\r")
+                    elif ch=="\t":
+                        out.append("\\t")
+                    else:
+                        out.append(f"\\u{code:04x}")
+                    continue
+                out.append(ch)
+            else:
+                out.append(ch)
+                if ch=='"':
+                    in_string=True
+        return "".join(out)
 
     def _response_text(self,response):
         if isinstance(response,str):
