@@ -10,7 +10,7 @@ class JournalistEngine:
         self.min_words=int(os.getenv("JOURNALIST_MIN_WORDS","1000"))
         self.max_words=int(os.getenv("JOURNALIST_MAX_WORDS","2400"))
         self.temperature=float(os.getenv("JOURNALIST_TEMPERATURE","0.45"))
-        self.max_tokens=int(os.getenv("JOURNALIST_MAX_TOKENS","6000"))
+        self.max_tokens=int(os.getenv("JOURNALIST_MAX_TOKENS","3500"))
 
     def write(self,article_plan=None,story=None,sources=None,claims=None,evidence=None,verification=None,synthesis=None,story_model=None,narrative=None,angles=None,psychology=None,reader_psychology=None,engagement=None,significance=None,ai=None,**kwargs):
         client=ai or self.ai
@@ -56,18 +56,18 @@ class JournalistEngine:
             name=self._text(s.get("source") or s.get("source_name") or s.get("publisher") or s.get("name"))
             text=self._text(s.get("content") or s.get("description") or s.get("summary") or s.get("text"))
             if url or text:
-                usable.append({"name":name,"url":url,"text":text[:7000]})
+                usable.append({"name":name,"url":url,"text":text[:4500]})
 
         facts=[]
         for item in verified:
             text=self._text(item.get("claim") or item.get("text") or item.get("statement") or item.get("fact")) if isinstance(item,dict) else self._text(item)
             if text:
-                facts.append(text[:1000])
+                facts.append(text[:800])
 
         for e in evidence:
             text=self._text(e.get("text") or e.get("evidence") or e.get("claim")) if isinstance(e,dict) else self._text(e)
             if text:
-                facts.append(text[:1000])
+                facts.append(text[:800])
 
         facts=self._unique(facts)
 
@@ -75,11 +75,11 @@ class JournalistEngine:
         for name,obj in (("story_model",story_model),("narrative",narrative),("angles",angles),("psychology",psychology),("reader_psychology",reader_psychology),("engagement",engagement),("significance",significance)):
             text=self._structured_text(obj)
             if text:
-                context.append(f"{name}: {text[:5000]}")
+                context.append(f"{name}: {text[:2500]}")
 
-        usable=usable[:12]
-        facts=facts[:50]
-        context=context[:12]
+        usable=usable[:8]
+        facts=facts[:30]
+        context=context[:8]
         source_text=sum(len(x["text"]) for x in usable)
         context_text=sum(len(x) for x in context)
 
@@ -89,7 +89,7 @@ class JournalistEngine:
 
         return {
             "title":title,
-            "summary":summary[:6000],
+            "summary":summary[:5000],
             "facts":facts,
             "sources":usable,
             "context":context,
