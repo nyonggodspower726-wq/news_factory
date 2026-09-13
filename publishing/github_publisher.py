@@ -670,3 +670,6 @@ footer{{border-top:1px solid #ddd;margin-top:50px;padding-top:20px;color:#777;fo
 
 
 github_publisher=GitHubPublisher()
+
+def create_github_publisher():
+    return GitHubPublisher()
