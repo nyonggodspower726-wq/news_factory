@@ -339,3 +339,334 @@ footer{{border-top:1px solid #ddd;margin-top:50px;padding-top:20px;color:#777;fo
 </main>
 </body>
 </html>'''
+    def _render_content(self,content:Any)->str:
+        text=self._text(content)
+        if not text:
+            return ""
+        if text.lstrip().startswith("<"):
+            return text
+
+        parts=[]
+        for block in re.split(r"\n\s*\n",text):
+            block=block.strip()
+            if not block:
+                continue
+
+            if block.startswith("### "):
+                parts.append(f"<h3>{self._html(block[4:])}</h3>")
+            elif block.startswith("## "):
+                parts.append(f"<h2>{self._html(block[3:])}</h2>")
+            elif block.startswith("# "):
+                parts.append(f"<h2>{self._html(block[2:])}</h2>")
+            else:
+                lines=block.splitlines()
+                rendered=[]
+                for line in lines:
+                    line=line.strip()
+                    if line:
+                        rendered.append(self._html(line))
+                if rendered:
+                    parts.append(f"<p>{'<br>'.join(rendered)}</p>")
+
+        return "\n".join(parts)
+
+    def _render_tags(self,tags:Any)->str:
+        if not isinstance(tags,list):
+            return ""
+        clean=self._clean_list(tags)
+        if not clean:
+            return ""
+        items="".join(
+            f'<span class="tag">{self._html(tag)}</span>'
+            for tag in clean
+        )
+        return f'<div class="tags">{items}</div>'
+
+    def _render_sources(self,sources:Any)->str:
+        if not isinstance(sources,list) or not sources:
+            return ""
+
+        items=[]
+        for source in sources:
+            if isinstance(source,dict):
+                name=self._text(
+                    source.get("name") or
+                    source.get("publisher") or
+                    source.get("title") or
+                    "Source"
+                )
+                url=self._text(
+                    source.get("url") or
+                    source.get("source_url") or
+                    ""
+                )
+            else:
+                name=self._text(source)
+                url=""
+
+            if not name and not url:
+                continue
+
+            if url:
+                safe_url=self._html(url)
+                safe_name=self._html(name or url)
+                items.append(
+                    f'<li><a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_name}</a></li>'
+                )
+            else:
+                items.append(f"<li>{self._html(name)}</li>")
+
+        if not items:
+            return ""
+
+        return (
+            '<section class="sources">'
+            '<h3>Sources</h3>'
+            f'<ul>{"".join(items)}</ul>'
+            '</section>'
+        )
+
+    def _update_sitemap(self,articles:List[Dict[str,Any]])->Dict[str,Any]:
+        sitemap=self._build_sitemap(articles)
+        return self._put_file(
+            self.sitemap_path,
+            sitemap,
+            "Update newsroom sitemap"
+        )
+
+    def _build_sitemap(self,articles:List[Dict[str,Any]])->str:
+        urls=[
+            (f"{self.site_url}/",""),
+            (f"{self.site_url}/article.html",""),
+            (f"{self.site_url}/category.html",""),
+            (f"{self.site_url}/search.html",""),
+        ]
+
+        seen=set()
+
+        for url,lastmod in urls:
+            if url not in seen:
+                seen.add(url)
+
+        article_entries=[]
+        for article in articles:
+            if not isinstance(article,dict):
+                continue
+
+            slug=self._text(article.get("slug",""))
+            if not slug:
+                continue
+
+            url=self._static_article_url(slug)
+            if url in seen:
+                continue
+
+            seen.add(url)
+            lastmod=self._sitemap_date(
+                article.get("modified_at") or
+                article.get("published_at") or
+                ""
+            )
+            article_entries.append((url,lastmod))
+
+        entries=[]
+        for url,lastmod in urls+article_entries:
+            entries.append(
+                "  <url>\n"
+                f"    <loc>{self._html(url)}</loc>\n"
+                +(
+                    f"    <lastmod>{lastmod}</lastmod>\n"
+                    if lastmod else ""
+                )+
+                "  </url>"
+            )
+
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            +"\n".join(entries)+
+            "\n</urlset>\n"
+        )
+
+    def _put_file(
+        self,
+        path:str,
+        content:str,
+        message:str
+    )->Dict[str,Any]:
+        existing=self._get_file(path)
+        payload={
+            "message":message,
+            "content":base64.b64encode(
+                content.encode("utf-8")
+            ).decode("ascii"),
+            "branch":self.branch,
+        }
+
+        if existing.get("success") and existing.get("sha"):
+            payload["sha"]=existing["sha"]
+
+        url=f"{self.api_base}/repos/{self.repository}/contents/{path}"
+        response=requests.put(
+            url,
+            headers=self._headers(),
+            json=payload,
+            timeout=self.timeout
+        )
+
+        if response.status_code not in {200,201}:
+            return {
+                "success":False,
+                "status_code":response.status_code,
+                "error":self._response_error(response),
+            }
+
+        data=response.json()
+
+        return {
+            "success":True,
+            "path":path,
+            "sha":data.get("content",{}).get("sha"),
+            "commit_sha":data.get("commit",{}).get("sha"),
+            "html_url":data.get("content",{}).get("html_url"),
+        }
+
+    def _get_file(self,path:str)->Dict[str,Any]:
+        url=f"{self.api_base}/repos/{self.repository}/contents/{path}"
+        response=requests.get(
+            url,
+            headers=self._headers(),
+            params={"ref":self.branch},
+            timeout=self.timeout
+        )
+
+        if response.status_code==404:
+            return {
+                "success":False,
+                "status_code":404,
+                "error":"File not found."
+            }
+
+        if response.status_code!=200:
+            return {
+                "success":False,
+                "status_code":response.status_code,
+                "error":self._response_error(response),
+            }
+
+        data=response.json()
+
+        return {
+            "success":True,
+            "path":path,
+            "sha":data.get("sha"),
+            "content":data.get("content",""),
+            "html_url":data.get("html_url"),
+        }
+
+    def _headers(self)->Dict[str,str]:
+        return {
+            "Authorization":f"Bearer {self.token}",
+            "Accept":"application/vnd.github+json",
+            "X-GitHub-Api-Version":"2022-11-28",
+            "User-Agent":"NewsFactory-GitHubPublisher",
+        }
+
+    def _response_error(self,response:requests.Response)->str:
+        try:
+            data=response.json()
+            message=data.get("message")
+            if message:
+                return str(message)
+        except Exception:
+            pass
+        return response.text[:500] or f"HTTP {response.status_code}"
+
+    def _article_url(self,slug:str)->str:
+        return f"{self.site_url}/article.html?slug={quote(slug)}"
+
+    def _static_article_url(self,slug:str)->str:
+        return f"{self.site_url}/{self.articles_dir}/{quote(slug)}.html"
+
+    def _sitemap_date(self,value:Any)->str:
+        text=self._text(value)
+        if not text:
+            return ""
+
+        try:
+            if text.endswith("Z"):
+                dt=datetime.fromisoformat(
+                    text.replace("Z","+00:00")
+                )
+            else:
+                dt=datetime.fromisoformat(text)
+
+            return dt.date().isoformat()
+        except Exception:
+            match=re.match(r"^(\d{4}-\d{2}-\d{2})",text)
+            return match.group(1) if match else ""
+
+    def _sort_date(self,value:Any)->str:
+        return self._text(value)
+
+    def _now(self)->str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _slug(self,text:str)->str:
+        value=self._text(text).lower()
+        value=re.sub(r"[^a-z0-9\s-]","",value)
+        value=re.sub(r"[\s-]+","-",value).strip("-")
+        return value[:120]
+
+    def _clean_list(self,values:List[Any])->List[str]:
+        output=[]
+        seen=set()
+
+        for value in values:
+            text=self._text(value)
+            if not text:
+                continue
+
+            key=text.lower()
+            if key in seen:
+                continue
+
+            seen.add(key)
+            output.append(text)
+
+        return output[:20]
+
+    def _text(self,value:Any)->str:
+        if value is None:
+            return ""
+
+        if isinstance(value,dict):
+            return self._text(
+                value.get("text") or
+                value.get("content") or
+                value.get("title") or
+                ""
+            )
+
+        if isinstance(value,list):
+            return " ".join(
+                self._text(item) for item in value
+            ).strip()
+
+        return str(value).strip()
+
+    def _html(self,value:Any)->str:
+        return escape(self._text(value),quote=True)
+
+    def _fail(self,error:str)->Dict[str,Any]:
+        return {
+            "status":"PUBLICATION_FAILED",
+            "published":False,
+            "platform":"website",
+            "engine":self.name,
+            "version":self.version,
+            "error":error,
+        }
+
+
+github_publisher=GitHubPublisher()
