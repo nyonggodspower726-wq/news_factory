@@ -9,6 +9,7 @@ from publishing.publication_tracker import PublicationTracker
 from publishing.publication_history import PublicationHistory
 from publishing.distribution_manager import DistributionManager
 from publication_orchestrator import PublicationOrchestrator
+from search_discovery import SearchDiscoveryEngine
 
 logger=logging.getLogger("NewsFactory.FactoryPipeline")
 
@@ -23,10 +24,11 @@ class FactoryPipeline:
         queue:Optional[PublicationQueue]=None,
         tracker:Optional[PublicationTracker]=None,
         history:Optional[PublicationHistory]=None,
-        distribution:Optional[DistributionManager]=None
+        distribution:Optional[DistributionManager]=None,
+        discovery:Optional[SearchDiscoveryEngine]=None
     ):
         self.name="AI News Factory Pipeline"
-        self.version="2.0.0"
+        self.version="2.1.0"
 
         self.orchestrator=(
             orchestrator
@@ -72,6 +74,11 @@ class FactoryPipeline:
                 history=self.history,
                 guard=self.guard
             )
+        )
+
+        self.discovery=(
+            discovery
+            or SearchDiscoveryEngine()
         )
 
     # =====================================================
@@ -264,6 +271,13 @@ class FactoryPipeline:
             )
         )
 
+        discovery_result=None
+
+        if published and platform=="website":
+            discovery_result=self._discover(
+                result
+            )
+
         self._record(
             article,
             platform,
@@ -282,7 +296,9 @@ class FactoryPipeline:
             "published":
                 published,
             "publisher_result":
-                result
+                result,
+            "discovery":
+                discovery_result
         }
 
     # =====================================================
@@ -382,6 +398,36 @@ class FactoryPipeline:
                 "error":str(exc)
             }
 
+        discovery_results=[]
+
+        if isinstance(result,dict):
+            publication_results=result.get(
+                "results",
+                result.get(
+                    "publications",
+                    []
+                )
+            )
+
+            if isinstance(
+                publication_results,
+                list
+            ):
+                for item in publication_results:
+                    if not isinstance(
+                        item,
+                        dict
+                    ):
+                        continue
+
+                    if (
+                        item.get("published")
+                        and item.get("platform")=="website"
+                    ):
+                        discovery_results.append(
+                            self._discover(item)
+                        )
+
         return {
             **prepared,
             "status":"COMPLETE",
@@ -389,7 +435,8 @@ class FactoryPipeline:
                 "published_count",
                 0
             ),
-            "distribution":result
+            "distribution":result,
+            "discovery":discovery_results
         }
 
     # =====================================================
@@ -487,6 +534,60 @@ class FactoryPipeline:
             }
 
     # =====================================================
+    # SEARCH DISCOVERY
+    # =====================================================
+
+    def _discover(
+        self,
+        result:Dict[str,Any]
+    )->Dict[str,Any]:
+
+        url=str(
+            result.get(
+                "static_url"
+            )
+            or result.get(
+                "url"
+            )
+            or ""
+        ).strip()
+
+        if not url:
+            return {
+                "status":"DISCOVERY_SKIPPED",
+                "submitted":False,
+                "reason":"Published URL is missing."
+            }
+
+        try:
+            discovery=self.discovery.submit(
+                url
+            )
+        except Exception as exc:
+            logger.exception(
+                "Search discovery failed | url=%s",
+                url
+            )
+            return {
+                "status":"DISCOVERY_FAILED",
+                "submitted":False,
+                "error":str(exc),
+                "url":url
+            }
+
+        if not discovery.get(
+            "submitted",
+            False
+        ):
+            logger.warning(
+                "SEARCH_DISCOVERY_WARNING | url=%s | error=%s",
+                url,
+                discovery.get("error")
+            )
+
+        return discovery
+
+    # =====================================================
     # RECORD
     # =====================================================
 
@@ -535,7 +636,8 @@ class FactoryPipeline:
             "queue":self.queue,
             "tracker":self.tracker,
             "history":self.history,
-            "distribution":self.distribution
+            "distribution":self.distribution,
+            "discovery":self.discovery
         }.items():
 
             try:
@@ -642,4 +744,4 @@ def factory_status():
 if __name__=="__main__":
     print(
         factory_pipeline.status()
-    )
+        )
